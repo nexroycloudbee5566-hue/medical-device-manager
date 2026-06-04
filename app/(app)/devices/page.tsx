@@ -53,7 +53,9 @@ import { ja } from 'date-fns/locale'
 
 const STATUS_BADGE: Record<DeviceStatus, string> = {
   active: 'bg-green-100 text-green-700 border-0',
-  inactive: 'bg-slate-100 text-slate-600 border-0',
+  moved: 'bg-blue-100 text-blue-700 border-0',
+  disposed: 'bg-slate-100 text-slate-500 border-0',
+  unknown: 'bg-yellow-100 text-yellow-700 border-0',
   repair: 'bg-orange-100 text-orange-700 border-0',
 }
 
@@ -533,7 +535,9 @@ function DeviceForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="active">利用中</SelectItem>
-            <SelectItem value="inactive">廃棄 / 移動</SelectItem>
+            <SelectItem value="moved">移動</SelectItem>
+            <SelectItem value="disposed">破棄</SelectItem>
+            <SelectItem value="unknown">不明</SelectItem>
             <SelectItem value="repair">修理中</SelectItem>
           </SelectContent>
         </Select>

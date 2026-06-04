@@ -32,12 +32,7 @@ const FIELD_BY_HEADER_KEY: Record<string, keyof ExcelRawFields> = {
   [hk('製造元メーカー')]: 'manufacturer',
   [hk('販売ディーラー')]: 'dealer',
   [hk('備考')]: 'notes',
-  [hk('メンテナンス\n （契約）')]: 'maintenance_contract',
-  [hk('メンテナンス(契約)')]: 'maintenance_contract',
-  [hk('区別\n （自設・リース）')]: 'ownership_type',
-  [hk('区別(自設・リース)')]: 'ownership_type',
   [hk('ステータス')]: 'excel_status',
-  [hk('棚卸確認')]: 'inventory_confirmation',
 }
 
 type ExcelRawFields = {
@@ -54,10 +49,7 @@ type ExcelRawFields = {
   manufacturer: unknown
   dealer: unknown
   notes: unknown
-  maintenance_contract: unknown
-  ownership_type: unknown
   excel_status: unknown
-  inventory_confirmation: unknown
 }
 
 export type ExcelDeviceImportRow = {
@@ -74,9 +66,6 @@ export type ExcelDeviceImportRow = {
   manufacturer: string | null
   dealer: string | null
   notes: string | null
-  maintenance_contract: string | null
-  ownership_type: string | null
-  inventory_confirmation: string | null
   status: DeviceStatus
   /** Excel のステータス原文（利用中・廃棄・移動など） */
   excelStatusLabel: string | null
@@ -85,10 +74,12 @@ export type ExcelDeviceImportRow = {
 /** 榊原温泉病院台帳のステータス → アプリの device.status */
 export function mapExcelEquipmentStatus(v: unknown): DeviceStatus {
   const s = String(v ?? '').trim()
-  if (s === '修理中') return 'repair'
-  if (s === '廃棄' || s === '移動') return 'inactive'
   if (s === '利用中') return 'active'
-  return 'active'
+  if (s === '移動') return 'moved'
+  if (s === '廃棄' || s === '破棄') return 'disposed'
+  if (s === '修理中') return 'repair'
+  if (s === '') return 'active'
+  return 'unknown'
 }
 
 /** Excel日付シリアルまたは ISO / 年月文字列 → yyyy-MM-dd（購入年月用） */
@@ -170,9 +161,6 @@ export function parseExcelRowToDevice(row: Record<string, unknown>): ExcelDevice
     manufacturer: str(f.manufacturer),
     dealer: str(f.dealer),
     notes: str(f.notes),
-    maintenance_contract: str(f.maintenance_contract),
-    ownership_type: str(f.ownership_type),
-    inventory_confirmation: str(f.inventory_confirmation),
     status: mapExcelEquipmentStatus(f.excel_status),
     excelStatusLabel,
   }
@@ -212,9 +200,6 @@ export function excelImportRowToDeviceInsert(r: ExcelDeviceImportRow): Record<st
     manufacturer: r.manufacturer,
     dealer: r.dealer,
     notes: r.notes,
-    maintenance_contract: r.maintenance_contract,
-    ownership_type: r.ownership_type,
-    inventory_confirmation: r.inventory_confirmation,
     status: r.status,
     updated_at: new Date().toISOString(),
   }

@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'staff'
 
-export type DeviceStatus = 'active' | 'inactive' | 'repair'
+export type DeviceStatus = 'active' | 'moved' | 'disposed' | 'unknown' | 'repair'
 
 export type RequestType = 'repair' | 'purchase'
 
@@ -180,8 +180,10 @@ export interface MaintenanceRecord {
 }
 
 export const DEVICE_STATUS_LABEL: Record<DeviceStatus, string> = {
-  active: '稼働中',
-  inactive: '休止中',
+  active: '利用中',
+  moved: '移動',
+  disposed: '破棄',
+  unknown: '不明',
   repair: '修理中',
 }
 
