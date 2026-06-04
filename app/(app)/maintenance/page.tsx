@@ -1,0 +1,706 @@
+'use client'
+
+import Link from 'next/link'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type {
+  Device,
+  MaintenanceRecord,
+  MaintenanceModelMaster,
+  MaintenanceChecklistItem,
+  ChecklistResultEntry,
+} from '@/lib/types'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Barcode, Loader2, ClipboardList, Stethoscope, RefreshCw } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { format, addYears, isPast } from 'date-fns'
+import { ja } from 'date-fns/locale'
+import {
+  matchMasterForDevice,
+  parseChecklistItems,
+  defaultResultsForItems,
+  applyBulkOk,
+  legacyItemsIncomplete,
+  serializeResultsForDb,
+  CHECKLIST_KIND_LABEL,
+  summarizeMaintenanceChecklistRaw,
+  describeMaintenanceChecklistLines,
+} from '@/lib/maintenance-master'
+
+function mapMasterRow(r: Record<string, unknown>): MaintenanceModelMaster {
+  return {
+    id: r.id as string,
+    manufacturer: (r.manufacturer as string) ?? '',
+    model: (r.model as string) ?? '',
+    checklist_items: parseChecklistItems(r.checklist_items),
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+  }
+}
+
+type ItemStatus = 'ok' | 'ng' | 'na'
+
+const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
+  ok: '適',
+  ng: '不適',
+  na: '対象外',
+}
+
+function ChecklistRowInput({
+  item,
+  entry,
+  onChange,
+}: {
+  item: MaintenanceChecklistItem
+  entry: ChecklistResultEntry | undefined
+  onChange: (next: ChecklistResultEntry) => void
+}) {
+  const kindLabel = CHECKLIST_KIND_LABEL[item.kind]
+
+  if (item.kind === 'legacy_okng') {
+    const r = entry?.mode === 'legacy' ? entry : { mode: 'legacy' as const, status: '' as const }
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+        <span className="text-xs text-slate-400 shrink-0">{kindLabel}</span>
+        <Select
+          value={r.status || undefined}
+          onValueChange={(v) => onChange({ mode: 'legacy', status: v as ItemStatus })}
+        >
+          <SelectTrigger className="w-full sm:w-36 h-9 text-sm bg-white">
+            <SelectValue placeholder="選択" />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(ITEM_STATUS_LABEL) as ItemStatus[]).map((k) => (
+              <SelectItem key={k} value={k}>
+                {ITEM_STATUS_LABEL[k]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  }
+
+  if (item.kind === 'checkbox') {
+    const r = entry?.mode === 'checkbox' ? entry : { mode: 'checkbox' as const, checked: false }
+    return (
+      <label className="flex items-center gap-2 cursor-pointer">
+        <span className="text-xs text-slate-400 shrink-0">{kindLabel}</span>
+        <input
+          type="checkbox"
+          checked={r.checked}
+          onChange={(e) => onChange({ mode: 'checkbox', checked: e.target.checked })}
+          className="h-4 w-4 rounded border-slate-300"
+        />
+      </label>
+    )
+  }
+
+  if (item.kind === 'number') {
+    const r = entry?.mode === 'number' ? entry : { mode: 'number' as const, value: null }
+    const unit = item.unit?.trim()
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-400 shrink-0">{kindLabel}</span>
+        <Input
+          type="number"
+          className="w-28 h-9 text-sm bg-white"
+          value={r.value === null || r.value === undefined ? '' : r.value}
+          onChange={(e) => {
+            const raw = e.target.value
+            onChange({
+              mode: 'number',
+              value: raw === '' ? null : Number(raw),
+            })
+          }}
+        />
+        {unit && <span className="text-sm text-slate-600">{unit}</span>}
+      </div>
+    )
+  }
+
+  if (item.kind === 'yn') {
+    const r = entry?.mode === 'yn' ? entry : { mode: 'yn' as const, value: '' as const }
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-400 shrink-0">{kindLabel}</span>
+        <Select
+          value={r.value === '' ? '__empty' : r.value}
+          onValueChange={(v) =>
+            onChange({ mode: 'yn', value: v === '__empty' ? '' : (v as 'Y' | 'N') })
+          }
+        >
+          <SelectTrigger className="w-full sm:w-28 h-9 text-sm bg-white">
+            <SelectValue placeholder="—" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__empty">未入力</SelectItem>
+            <SelectItem value="Y">Y</SelectItem>
+            <SelectItem value="N">N</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  }
+
+  if (item.kind === 'date') {
+    const r = entry?.mode === 'date' ? entry : { mode: 'date' as const, value: '' }
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-400 shrink-0">{kindLabel}</span>
+        <Input
+          type="date"
+          className="w-44 h-9 text-sm bg-white"
+          value={r.value}
+          onChange={(e) => onChange({ mode: 'date', value: e.target.value })}
+        />
+      </div>
+    )
+  }
+
+  if (item.kind === 'remarks') {
+    const r = entry?.mode === 'remarks' ? entry : { mode: 'remarks' as const, value: '' }
+    return (
+      <div className="space-y-1 w-full">
+        <span className="text-xs text-slate-400">{kindLabel}</span>
+        <Textarea
+          className="text-sm bg-white min-h-[72px]"
+          value={r.value}
+          onChange={(e) => onChange({ mode: 'remarks', value: e.target.value })}
+          placeholder="備考"
+        />
+      </div>
+    )
+  }
+
+  /* text */
+  const r = entry?.mode === 'text' ? entry : { mode: 'text' as const, value: '' }
+  return (
+    <div className="space-y-1 w-full">
+      <span className="text-xs text-slate-400">{kindLabel}</span>
+      <Input
+        className="text-sm bg-white"
+        value={r.value}
+        onChange={(e) => onChange({ mode: 'text', value: e.target.value })}
+        placeholder="入力"
+      />
+    </div>
+  )
+}
+
+export default function MaintenancePage() {
+  const supabase = useMemo(() => createClient(), [])
+  const [codeInput, setCodeInput] = useState('')
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [device, setDevice] = useState<Device | null>(null)
+  const [masters, setMasters] = useState<MaintenanceModelMaster[]>([])
+  const [recentRecords, setRecentRecords] = useState<MaintenanceRecord[]>([])
+  const [checklistResults, setChecklistResults] = useState<Record<string, ChecklistResultEntry>>({})
+  const [completedDate, setCompletedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [masterReloading, setMasterReloading] = useState(false)
+
+  const fetchMasters = useCallback(async (): Promise<MaintenanceModelMaster[]> => {
+    const { data, error } = await supabase.from('maintenance_model_masters').select('*')
+    if (error) {
+      console.error('[定期点検] メンテナンスマスタ取得エラー:', error.message)
+      return []
+    }
+    const list = (data ?? []).map((row) => mapMasterRow(row as Record<string, unknown>))
+    setMasters(list)
+    return list
+  }, [supabase])
+
+  useEffect(() => {
+    void fetchMasters()
+  }, [fetchMasters])
+
+  useEffect(() => {
+    if (device?.id) void fetchMasters()
+  }, [device?.id, fetchMasters])
+
+  const masterForDevice = device
+    ? matchMasterForDevice(masters, device.manufacturer, device.model)
+    : null
+
+  useEffect(() => {
+    if (!device) {
+      setChecklistResults({})
+      return
+    }
+    const m = matchMasterForDevice(masters, device.manufacturer, device.model)
+    setChecklistResults(defaultResultsForItems(m?.checklist_items ?? []))
+  }, [device, masters])
+
+  const loadRecentForDevice = useCallback(
+    async (deviceId: string) => {
+      const { data } = await supabase
+        .from('maintenance_records')
+        .select('*, maintenance_model_masters(checklist_items)')
+        .eq('device_id', deviceId)
+        .order('completed_date', { ascending: false })
+        .limit(8)
+      setRecentRecords((data as MaintenanceRecord[]) ?? [])
+    },
+    [supabase],
+  )
+
+  useEffect(() => {
+    if (device?.id) loadRecentForDevice(device.id)
+    else setRecentRecords([])
+  }, [device, loadRecentForDevice])
+
+  async function reloadMastersManual() {
+    setMasterReloading(true)
+    try {
+      await fetchMasters()
+    } finally {
+      setMasterReloading(false)
+    }
+  }
+
+  async function lookupByCode() {
+    const raw = codeInput.trim()
+    if (!raw) return
+    setLookupBusy(true)
+    try {
+      const { data, error } = await supabase.from('devices').select('*').eq('barcode', raw).maybeSingle()
+
+      if (error || !data) {
+        setDevice(null)
+        alert(`機器コード「${raw}」に一致する機器が見つかりませんでした。`)
+        return
+      }
+      await fetchMasters()
+      setDevice(data as Device)
+      setCompletedDate(format(new Date(), 'yyyy-MM-dd'))
+      setNotes('')
+    } finally {
+      setLookupBusy(false)
+      setCodeInput('')
+    }
+  }
+
+  function clearDevice() {
+    setDevice(null)
+    setRecentRecords([])
+    setChecklistResults({})
+  }
+
+  async function submitInspection(e: React.FormEvent) {
+    e.preventDefault()
+    if (!device) return
+    const items = masterForDevice?.checklist_items ?? []
+    const missLegacy = legacyItemsIncomplete(items, checklistResults)
+    if (missLegacy.length > 0) {
+      alert(
+        `「適／不適／対象外」の項目が未入力です（${missLegacy.length}件）。すべて選択してください。`,
+      )
+      return
+    }
+    if (!completedDate) {
+      alert('実施日を入力してください。')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const checklist_results =
+        items.length > 0 ? serializeResultsForDb(checklistResults) : null
+
+      await supabase.from('maintenance_records').insert({
+        device_id: device.id,
+        type: '定期点検',
+        scheduled_date: null,
+        completed_date: completedDate,
+        result: null,
+        notes: notes.trim() || null,
+        maintenance_model_master_id: masterForDevice?.id ?? null,
+        checklist_results,
+        created_by: user?.id ?? null,
+      })
+
+      const nextDue = format(addYears(new Date(completedDate), 1), 'yyyy-MM-dd')
+      await supabase
+        .from('devices')
+        .update({
+          next_maintenance_due: nextDue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', device.id)
+
+      const { data: refreshed } = await supabase.from('devices').select('*').eq('id', device.id).maybeSingle()
+      let deviceAfterSave = device
+      if (refreshed) {
+        deviceAfterSave = refreshed as Device
+        setDevice(deviceAfterSave)
+      }
+
+      await loadRecentForDevice(device.id)
+      alert('定期点検を記録しました。次回点検予定は1年後に更新されています。')
+      setNotes('')
+      const freshMasters = await fetchMasters()
+      const m = matchMasterForDevice(freshMasters, deviceAfterSave.manufacturer, deviceAfterSave.model)
+      setChecklistResults(defaultResultsForItems(m?.checklist_items ?? []))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const maintenanceDue = device?.next_maintenance_due ? new Date(device.next_maintenance_due) : null
+  const overdue =
+    maintenanceDue != null && !Number.isNaN(maintenanceDue.getTime()) && isPast(maintenanceDue)
+
+  const templateItems = masterForDevice?.checklist_items ?? []
+  const hasBulkTargets = templateItems.some((i) => i.kind === 'checkbox' || i.kind === 'yn')
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">定期点検（読み取り）</h1>
+          <p className="text-slate-500 text-sm mt-0.5">
+            機器コードを手入力またはバーコードで読み取り、対象機器のカルテと定期点検（1年サイクル）を記録します。
+          </p>
+        </div>
+        <Link
+          href="/maintenance/master"
+          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+        >
+          <ClipboardList className="h-4 w-4 mr-1.5" />
+          メンテナンスマスタ
+        </Link>
+      </div>
+
+      <Card className="border-0 shadow-sm bg-blue-50">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <Label className="text-blue-800 font-medium text-sm flex items-center gap-2">
+                <Barcode className="h-4 w-4" />
+                機器コード（管理バーコード）
+              </Label>
+              <Input
+                value={codeInput}
+                onChange={(e) => setCodeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    lookupByCode()
+                  }
+                }}
+                placeholder="読み取りまたは入力して Enter"
+                className="bg-white border-blue-200"
+                disabled={lookupBusy}
+                autoFocus
+              />
+            </div>
+            <Button type="button" className="sm:mb-0.5" onClick={lookupByCode} disabled={lookupBusy || !codeInput.trim()}>
+              {lookupBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Barcode className="h-4 w-4 mr-2" />
+              )}
+              読み取り
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {!device ? (
+        <Card className="border border-dashed border-slate-200 bg-white">
+          <CardContent className="py-16 text-center text-slate-400">
+            <Stethoscope className="h-12 w-12 mx-auto mb-3 opacity-35" />
+            <p className="text-sm">機器コードを読み取ると、カルテと点検フォームが表示されます。</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid lg:grid-cols-2 gap-6 items-start">
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-blue-600" />
+                機器カルテ
+              </CardTitle>
+              <Button type="button" variant="outline" size="sm" onClick={clearDevice}>
+                別の機器
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex flex-wrap gap-2 items-center">
+                <Badge variant="outline" className="font-mono">
+                  {device.barcode ?? 'コードなし'}
+                </Badge>
+                <Badge
+                  className={
+                    device.status === 'active'
+                      ? 'bg-green-100 text-green-800 border-0'
+                      : device.status === 'repair'
+                        ? 'bg-orange-100 text-orange-800 border-0'
+                        : 'bg-slate-100 text-slate-700 border-0'
+                  }
+                >
+                  {device.status === 'active' ? '稼働中' : device.status === 'repair' ? '修理中' : '休止中'}
+                </Badge>
+              </div>
+              <dl className="grid grid-cols-1 gap-2">
+                <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                  <dt className="text-slate-500 shrink-0">機器名</dt>
+                  <dd className="font-medium text-right">{device.name}</dd>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                  <dt className="text-slate-500 shrink-0">メーカー / 型式</dt>
+                  <dd className="text-right">
+                    {[device.manufacturer, device.model].filter(Boolean).join(' / ') || '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                  <dt className="text-slate-500 shrink-0">シリアル</dt>
+                  <dd className="text-right">{device.serial_number ?? '—'}</dd>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                  <dt className="text-slate-500 shrink-0">設置</dt>
+                  <dd className="text-right">
+                    {[device.department, device.location].filter(Boolean).join(' ') || '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                  <dt className="text-slate-500 shrink-0">購入日</dt>
+                  <dd className="text-right">
+                    {device.purchase_date
+                      ? format(new Date(device.purchase_date), 'yyyy/MM/dd', { locale: ja })
+                      : '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                  <dt className="text-slate-500 shrink-0">次回点検予定</dt>
+                  <dd className="text-right">
+                    {maintenanceDue ? (
+                      <span className={overdue ? 'text-red-600 font-semibold' : 'text-slate-800'}>
+                        {format(maintenanceDue, 'yyyy/MM/dd', { locale: ja })}
+                        {overdue && '（期限切れ）'}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              {device.notes && (
+                <div className="rounded-lg bg-slate-50 p-3 text-slate-700">
+                  <p className="text-xs font-medium text-slate-500 mb-1">備考（台帳）</p>
+                  <p className="whitespace-pre-wrap">{device.notes}</p>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-2">直近の点検記録</p>
+                {recentRecords.length === 0 ? (
+                  <p className="text-xs text-slate-400">まだ記録がありません</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="text-xs w-28">実施日</TableHead>
+                        <TableHead className="text-xs">点検内容（項目別）</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {recentRecords.map((rec) => {
+                        const lines = describeMaintenanceChecklistLines(
+                          rec.checklist_results ?? {},
+                          rec.maintenance_model_masters?.checklist_items,
+                        )
+                        const fallback =
+                          summarizeMaintenanceChecklistRaw(rec.checklist_results ?? undefined)
+                        return (
+                          <TableRow key={rec.id}>
+                            <TableCell className="text-xs align-top">
+                              {rec.completed_date
+                                ? format(new Date(rec.completed_date), 'yyyy/MM/dd', {
+                                    locale: ja,
+                                  })
+                                : '—'}
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-600 max-w-[14rem]">
+                              {lines.length > 0 ? (
+                                <ul className="list-none space-y-0.5 max-h-24 overflow-y-auto">
+                                  {lines.slice(0, 12).map((line, i) => (
+                                    <li key={i} className="leading-snug">
+                                      {line}
+                                    </li>
+                                  ))}
+                                  {lines.length > 12 && (
+                                    <li className="text-slate-400">ほか {lines.length - 12} 件…</li>
+                                  )}
+                                </ul>
+                              ) : fallback ? (
+                                fallback
+                              ) : rec.notes?.trim() ? (
+                                <span className="text-slate-500">備考のみ</span>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm border-t-4 border-t-blue-600">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-semibold">定期点検（1年サイクル）</CardTitle>
+              <p className="text-xs text-slate-500 font-normal">
+                記録後、次回点検予定日は実施日から1年後に自動更新されます。
+              </p>
+            </CardHeader>
+            <CardContent>
+              {!masterForDevice ? (
+                <div className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg p-3 mb-4 space-y-2">
+                  <p className="font-medium">この機器に対応するメンテナンスマスタが見つかりません。</p>
+                  <p className="text-xs leading-relaxed">
+                    台帳のメーカー: <strong>{device.manufacturer?.trim() || '（未入力）'}</strong>
+                    {' / '}
+                    型式: <strong>{device.model?.trim() || '（未入力）'}</strong>
+                  </p>
+                  <p className="text-xs text-amber-900/90">
+                    メンテナンスマスタはメーカー・型式の組み合わせで紐づきます。台帳の値とマスタが一致しているか確認してください。
+                    型式だけが一致するマスタが1件のときは自動で使われます。
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={masterReloading}
+                      onClick={() => void reloadMastersManual()}
+                    >
+                      {masterReloading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                      )}
+                      マスタを再取得
+                    </Button>
+                    <Link
+                      href="/maintenance/master"
+                      className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'h-8 text-xs')}
+                    >
+                      マスタ設定を開く
+                    </Link>
+                  </div>
+                </div>
+              ) : templateItems.length === 0 ? (
+                <div className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg p-3 mb-4 space-y-2">
+                  <p>マスタはありますが、点検項目が空です（点検名が未入力の行は保存されません）。</p>
+                  <Link
+                    href="/maintenance/master"
+                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-8 text-xs inline-flex')}
+                  >
+                    マスタで項目を追加する
+                  </Link>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 mb-3">
+                  マスタの入力タイプに沿って記録します。Y/N・チェック項目は「一括OK」でまとめて入力できます。
+                </p>
+              )}
+
+              <form onSubmit={submitInspection} className="space-y-4">
+                {masterForDevice && templateItems.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Label className="text-xs text-slate-600">点検項目</Label>
+                      {hasBulkTargets && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() =>
+                            setChecklistResults((prev) => applyBulkOk(templateItems, prev))
+                          }
+                        >
+                          一括OK（Y/N→Y、チェック→オン）
+                        </Button>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 bg-white">
+                      {templateItems.map((item) => (
+                        <div key={item.key} className="flex flex-col gap-2 p-3">
+                          <span className="text-sm font-medium text-slate-800">{item.label}</span>
+                          <ChecklistRowInput
+                            item={item}
+                            entry={checklistResults[item.key]}
+                            onChange={(next) =>
+                              setChecklistResults((prev) => ({ ...prev, [item.key]: next }))
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 max-w-xs">
+                  <Label>実施日</Label>
+                  <Input
+                    type="date"
+                    value={completedDate}
+                    onChange={(e) => setCompletedDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>備考（点検記録全体）</Label>
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="追加メモがあれば入力"
+                  />
+                </div>
+
+                <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
+                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  点検を記録する
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  )
+}

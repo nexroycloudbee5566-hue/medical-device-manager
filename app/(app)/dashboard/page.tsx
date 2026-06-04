@@ -1,0 +1,479 @@
+'use client'
+
+import { useEffect, useState, useCallback, useMemo } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import {
+  type Device,
+  type MaintenanceModelMaster,
+  type Request,
+  type RequestType,
+  getStatusList,
+} from '@/lib/types'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
+import { RefreshCw, Wrench, ShoppingCart, Hammer, ChevronRight, CalendarClock } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { differenceInCalendarDays, parse, startOfDay } from 'date-fns'
+import { matchMasterForDevice, parseChecklistItems } from '@/lib/maintenance-master'
+
+function mapMasterRow(r: Record<string, unknown>): MaintenanceModelMaster {
+  return {
+    id: r.id as string,
+    manufacturer: (r.manufacturer as string) ?? '',
+    model: (r.model as string) ?? '',
+    checklist_items: parseChecklistItems(r.checklist_items),
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+  }
+}
+
+/** 定期点検画面と同じ照合で、マスタがあり点検項目が1件以上ある場合のみ true */
+function deviceHasInspectionMaster(
+  masters: MaintenanceModelMaster[],
+  dev: Pick<Device, 'manufacturer' | 'model'>,
+): boolean {
+  const m = matchMasterForDevice(masters, dev.manufacturer, dev.model)
+  return m != null && m.checklist_items.length > 0
+}
+
+function requestProgressPct(type: RequestType, status: string): number {
+  const statusList = getStatusList(type)
+  const idx = statusList.indexOf(status as never)
+  if (idx === -1) return 0
+  return Math.round((idx / (statusList.length - 1)) * 100)
+}
+
+function repairGroupKey(r: Request): string {
+  if (r.device_id) return `device:${r.device_id}`
+  const t = (r.requested_equipment || '').trim()
+  return t ? `text:${t}` : 'unknown'
+}
+
+function repairGroupLabel(r: Request): string {
+  const dev = r.devices as { name?: string; barcode?: string } | undefined
+  if (dev?.name) return `${dev.name}${dev.barcode ? ` [${dev.barcode}]` : ''}`
+  const t = r.requested_equipment?.trim()
+  if (t) return t
+  return '機器未設定'
+}
+
+function purchaseGroupKey(r: Request): string {
+  const t = (r.requested_equipment || '').trim()
+  return t || '__empty__'
+}
+
+function purchaseGroupLabel(key: string): string {
+  return key === '__empty__' ? '（依頼機器未入力）' : key
+}
+
+function groupRequests(
+  list: Request[],
+  type: RequestType,
+): { key: string; label: string; requests: Request[] }[] {
+  const map = new Map<string, Request[]>()
+  for (const r of list) {
+    const key =
+      type === 'repair' ? repairGroupKey(r) : purchaseGroupKey(r)
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(r)
+  }
+  const out = [...map.entries()].map(([key, requests]) => ({
+    key,
+    label:
+      type === 'repair'
+        ? repairGroupLabel(requests[0])
+        : purchaseGroupLabel(key),
+    requests,
+  }))
+  out.sort((a, b) => a.label.localeCompare(b.label, 'ja'))
+  return out
+}
+
+export default function DashboardPage() {
+  const supabase = useMemo(() => createClient(), [])
+  const [requests, setRequests] = useState<Request[]>([])
+  const [loading, setLoading] = useState(true)
+  const [inspectionStale, setInspectionStale] = useState<
+    { device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>; lastInspection: string | null }[]
+  >([])
+
+  const fetchInspectionStale = useCallback(async () => {
+    const [{ data: devices }, { data: records }, { data: mastersRaw }] = await Promise.all([
+      supabase
+        .from('devices')
+        .select('id, name, barcode, manufacturer, model')
+        .eq('status', 'active'),
+      supabase
+        .from('maintenance_records')
+        .select('device_id, completed_date')
+        .eq('type', '定期点検')
+        .not('completed_date', 'is', null),
+      supabase.from('maintenance_model_masters').select('*'),
+    ])
+
+    const masters = (mastersRaw ?? []).map((row) => mapMasterRow(row as Record<string, unknown>))
+
+    const latestByDevice = new Map<string, string>()
+    for (const row of records ?? []) {
+      const did = row.device_id as string | null
+      const cd = row.completed_date as string | null
+      if (!did || !cd) continue
+      const prev = latestByDevice.get(did)
+      if (!prev || cd > prev) latestByDevice.set(did, cd.slice(0, 10))
+    }
+
+    const today = startOfDay(new Date())
+    const stale: { device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>; lastInspection: string | null }[] = []
+    for (const dev of (devices ?? []) as Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>[]) {
+      if (!deviceHasInspectionMaster(masters, dev)) continue
+      const last = latestByDevice.get(dev.id) ?? null
+      if (!last) {
+        stale.push({ device: dev, lastInspection: null })
+        continue
+      }
+      const lastDay = parse(last, 'yyyy-MM-dd', new Date())
+      if (Number.isNaN(lastDay.getTime())) continue
+      const days = differenceInCalendarDays(today, startOfDay(lastDay))
+      if (days >= 365) stale.push({ device: dev, lastInspection: last })
+    }
+
+    stale.sort((a, b) => {
+      if (a.lastInspection === null && b.lastInspection === null) return a.device.name.localeCompare(b.device.name, 'ja')
+      if (a.lastInspection === null) return -1
+      if (b.lastInspection === null) return 1
+      return a.lastInspection.localeCompare(b.lastInspection)
+    })
+    setInspectionStale(stale)
+  }, [supabase])
+
+  const fetchRequests = useCallback(async () => {
+    const { data } = await supabase
+      .from('requests')
+      .select(
+        'id, type, status, device_id, requested_equipment, description, devices(name, barcode)',
+      )
+      .neq('status', '完了')
+    setRequests(((data ?? []) as unknown) as Request[])
+    setLoading(false)
+    void fetchInspectionStale()
+  }, [supabase, fetchInspectionStale])
+
+  useEffect(() => {
+    fetchRequests()
+    const channel = supabase
+      .channel('dashboard-requests')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchRequests)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'maintenance_records' },
+        () => void fetchInspectionStale(),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'devices' },
+        () => void fetchInspectionStale(),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'maintenance_model_masters' },
+        () => void fetchInspectionStale(),
+      )
+      .subscribe()
+    void fetchInspectionStale()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchRequests, fetchInspectionStale, supabase])
+
+  const repairList = useMemo(
+    () => requests.filter((r) => r.type === 'repair'),
+    [requests],
+  )
+  const purchaseList = useMemo(
+    () => requests.filter((r) => r.type === 'purchase'),
+    [requests],
+  )
+
+  const repairGroups = useMemo(
+    () => groupRequests(repairList, 'repair'),
+    [repairList],
+  )
+  const purchaseGroups = useMemo(
+    () => groupRequests(purchaseList, 'purchase'),
+    [purchaseList],
+  )
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">ダッシュボード</h1>
+          <p className="text-slate-500 text-sm mt-0.5">
+            進行中依頼を機器／依頼機器ごとに表示します
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={fetchRequests}>
+          <RefreshCw className="h-4 w-4 mr-1.5" />
+          更新
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="border-0 shadow-sm">
+          <CardContent className="pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">進行中（合計）</p>
+                <p className="text-3xl font-bold text-slate-800 mt-1">{requests.length}</p>
+              </div>
+              <div className="p-3 bg-blue-50 rounded-xl">
+                <RefreshCw className="h-5 w-5 text-blue-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardContent className="pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">修理依頼（進行中）</p>
+                <p className="text-3xl font-bold text-slate-800 mt-1">{repairList.length}</p>
+              </div>
+              <div className="p-3 bg-orange-50 rounded-xl">
+                <Wrench className="h-5 w-5 text-orange-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardContent className="pt-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">購入依頼（進行中）</p>
+                <p className="text-3xl font-bold text-slate-800 mt-1">{purchaseList.length}</p>
+              </div>
+              <div className="p-3 bg-green-50 rounded-xl">
+                <ShoppingCart className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-0 shadow-sm border-l-4 border-l-amber-500 bg-amber-50/35 overflow-hidden">
+        <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-amber-50/80 border-b border-amber-100">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base font-semibold text-amber-950 flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 text-amber-700 shrink-0" />
+              定期点検（1年以上未実施）
+            </CardTitle>
+            <p className="text-xs text-amber-900/75 font-normal leading-snug">
+              メンテナンスマスタ（点検項目あり）が紐づく稼働中機器のみ表示します。
+            </p>
+          </div>
+          <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white shrink-0">
+            {loading ? '…' : `${inspectionStale.length} 件`}
+          </Badge>
+        </CardHeader>
+        <CardContent className="py-3 px-4">
+          {loading ? (
+            <p className="text-sm text-amber-900/70 py-2">読み込み中…</p>
+          ) : inspectionStale.length === 0 ? (
+            <p className="text-sm text-amber-900/70 py-1">
+              メンテナンスマスタが登録されている稼働中機器のうち、直近の定期点検から365日以上経過（または点検記録なし）のものはありません。
+            </p>
+          ) : (
+            <ul className="max-h-72 overflow-y-auto divide-y divide-amber-100 text-sm">
+              {inspectionStale.map(({ device: dev, lastInspection }) => (
+                <li key={dev.id} className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="font-medium text-slate-900 truncate">{dev.name}</p>
+                    <p className="text-xs text-slate-600">
+                      {dev.barcode ? (
+                        <span className="font-mono mr-2">{dev.barcode}</span>
+                      ) : (
+                        <span className="text-slate-400 mr-2">コードなし</span>
+                      )}
+                      {[dev.manufacturer, dev.model].filter(Boolean).join(' / ') || null}
+                    </p>
+                    <p className="text-xs text-amber-900 font-medium">
+                      {lastInspection === null
+                        ? '定期点検の記録がありません'
+                        : `最終点検: ${lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}（${differenceInCalendarDays(startOfDay(new Date()), startOfDay(parse(lastInspection, 'yyyy-MM-dd', new Date())))} 日前）`}
+                    </p>
+                  </div>
+                  <Link
+                    href="/maintenance"
+                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-7 text-xs')}
+                  >
+                    点検へ
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-slate-400">
+          <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+          読み込み中...
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                <Hammer className="h-5 w-5 text-orange-600" />
+                修理依頼 — 機器別
+              </h2>
+              <Link
+                href="/requests/repair"
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-0.5')}
+              >
+                一覧へ
+                <ChevronRight className="h-4 w-4 ml-0.5" />
+              </Link>
+            </div>
+            {repairList.length === 0 ? (
+              <Card className="border-0 shadow-sm">
+                <CardContent className="py-8">
+                  <p className="text-sm text-slate-400 text-center">
+                    進行中の修理依頼はありません
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {repairGroups.map((g) => (
+                  <Card key={g.key} className="border-0 shadow-sm overflow-hidden">
+                    <CardHeader className="py-3 px-4 bg-orange-50/60 border-b border-orange-100">
+                      <CardTitle className="text-sm font-semibold text-slate-800 leading-snug">
+                        {g.label}
+                      </CardTitle>
+                      <p className="text-xs text-slate-500 font-normal">
+                        進行中 {g.requests.length} 件
+                      </p>
+                    </CardHeader>
+                    <CardContent className="py-3 px-4 space-y-3">
+                      {g.requests.map((req) => {
+                        const pct = requestProgressPct('repair', req.status)
+                        return (
+                          <div
+                            key={req.id}
+                            className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 space-y-2"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Badge
+                                className={`text-xs font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}
+                              >
+                                {req.status}
+                              </Badge>
+                              <span className="text-xs text-slate-500 tabular-nums">{pct}%</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-orange-500 rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-slate-600 line-clamp-2">{req.description}</p>
+                          </div>
+                        )
+                      })}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5 text-green-600" />
+                購入依頼 — 依頼機器別
+              </h2>
+              <Link
+                href="/requests/purchase"
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-0.5')}
+              >
+                一覧へ
+                <ChevronRight className="h-4 w-4 ml-0.5" />
+              </Link>
+            </div>
+            {purchaseList.length === 0 ? (
+              <Card className="border-0 shadow-sm">
+                <CardContent className="py-8">
+                  <p className="text-sm text-slate-400 text-center">
+                    進行中の購入依頼はありません
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {purchaseGroups.map((g) => (
+                  <Card key={g.key} className="border-0 shadow-sm overflow-hidden">
+                    <CardHeader className="py-3 px-4 bg-green-50/60 border-b border-green-100">
+                      <CardTitle className="text-sm font-semibold text-slate-800 leading-snug">
+                        {g.label}
+                      </CardTitle>
+                      <p className="text-xs text-slate-500 font-normal">
+                        進行中 {g.requests.length} 件
+                      </p>
+                    </CardHeader>
+                    <CardContent className="py-3 px-4 space-y-3">
+                      {g.requests.map((req) => {
+                        const pct = requestProgressPct('purchase', req.status)
+                        return (
+                          <div
+                            key={req.id}
+                            className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 space-y-2"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Badge
+                                className={`text-xs font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}
+                              >
+                                {req.status}
+                              </Badge>
+                              <span className="text-xs text-slate-500 tabular-nums">{pct}%</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-green-600 rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-slate-600 line-clamp-2">{req.description}</p>
+                          </div>
+                        )
+                      })}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-3 justify-center pt-2">
+        <Link href="/requests/repair" className={cn(buttonVariants(), 'inline-flex items-center')}>
+          <Hammer className="h-4 w-4 mr-2" />
+          修理依頼を開く
+        </Link>
+        <Link
+          href="/requests/purchase"
+          className={cn(buttonVariants({ variant: 'secondary' }), 'inline-flex items-center')}
+        >
+          <ShoppingCart className="h-4 w-4 mr-2" />
+          購入依頼を開く
+        </Link>
+      </div>
+    </div>
+  )
+}
