@@ -1,6 +1,7 @@
-import { addYears, format, parse, startOfDay, isValid } from 'date-fns'
+import { format, parse, startOfDay, isValid } from 'date-fns'
 import type { Device, MaintenanceModelMaster } from '@/lib/types'
-import { deviceHasInspectionMaster } from '@/lib/maintenance-master'
+import { deviceHasInspectionMaster, matchMasterForDevice } from '@/lib/maintenance-master'
+import { derivePlannedDate, getIntervalMonthsForDevice } from '@/lib/inspection-interval'
 
 export type AnnualPlanStatus =
   | 'completed'
@@ -39,20 +40,6 @@ function parseYmd(s: string | null | undefined): Date | null {
   return isValid(d) ? startOfDay(d) : null
 }
 
-/** 次回予定日: 台帳の next_maintenance_due を優先、なければ最終点検 + 1年 */
-export function derivePlannedDate(
-  nextMaintenanceDue: string | null | undefined,
-  lastCompletedDate: string | null | undefined,
-): string | null {
-  const fromDue = parseYmd(nextMaintenanceDue ?? null)
-  if (fromDue) return format(fromDue, 'yyyy-MM-dd')
-
-  const last = parseYmd(lastCompletedDate ?? null)
-  if (last) return format(addYears(last, 1), 'yyyy-MM-dd')
-
-  return null
-}
-
 function statusForItem(
   plannedDate: string | null,
   completedInYear: boolean,
@@ -88,7 +75,8 @@ export function buildAnnualPlanItems(
     if (!deviceHasInspectionMaster(masters, dev)) continue
 
     const lastCompleted = latestInspectionByDevice.get(dev.id) ?? null
-    const plannedDate = derivePlannedDate(dev.next_maintenance_due, lastCompleted)
+    const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
+    const plannedDate = derivePlannedDate(dev.next_maintenance_due, lastCompleted, intervalMonths)
     const completedInYear = completedInYearByDevice.has(dev.id)
 
     items.push({

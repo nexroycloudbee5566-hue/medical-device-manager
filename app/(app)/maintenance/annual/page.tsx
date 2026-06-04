@@ -34,7 +34,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react'
-import { parseChecklistItems } from '@/lib/maintenance-master'
+import { mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
 import {
   buildAnnualPlanItems,
   groupPlanByMonth,
@@ -42,17 +42,6 @@ import {
   type AnnualPlanItem,
   type AnnualPlanStatus,
 } from '@/lib/annual-maintenance-plan'
-
-function mapMasterRow(r: Record<string, unknown>): MaintenanceModelMaster {
-  return {
-    id: r.id as string,
-    manufacturer: (r.manufacturer as string) ?? '',
-    model: (r.model as string) ?? '',
-    checklist_items: parseChecklistItems(r.checklist_items),
-    created_at: r.created_at as string,
-    updated_at: r.updated_at as string,
-  }
-}
 
 const STATUS_LABEL: Record<AnnualPlanStatus, string> = {
   completed: '年内完了',
@@ -173,7 +162,9 @@ export default function AnnualMaintenancePage() {
 
     setHospitals((hospitalsRaw as Hospital[]) ?? [])
 
-    const masters = (mastersRaw ?? []).map((row) => mapMasterRow(row as Record<string, unknown>))
+    const masters = (mastersRaw ?? []).map((row) =>
+      mapMaintenanceModelMasterRow(row as Record<string, unknown>),
+    )
 
     const latestByDevice = new Map<string, string>()
     const completedInYear = new Set<string>()
@@ -350,7 +341,7 @@ export default function AnnualMaintenancePage() {
       )}
 
       <p className="text-xs text-slate-400">
-        次回予定日は機器台帳の「次回点検予定」、未入力の場合は直近の定期点検完了日から1年後を表示します。
+        次回予定日は機器台帳の「次回点検予定」を優先し、未入力の場合は直近の定期点検完了日に型式マスタの点検期間を加えた日付を表示します。
         対象はメンテナンスマスタに点検項目が登録された稼働中機器のみです。
       </p>
     </div>

@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/table'
 import { Barcode, Loader2, ClipboardList, Stethoscope, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { format, addYears, isPast } from 'date-fns'
+import { format, isPast } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import {
   matchMasterForDevice,
@@ -45,18 +45,12 @@ import {
   CHECKLIST_KIND_LABEL,
   summarizeMaintenanceChecklistRaw,
   describeMaintenanceChecklistLines,
+  mapMaintenanceModelMasterRow,
 } from '@/lib/maintenance-master'
-
-function mapMasterRow(r: Record<string, unknown>): MaintenanceModelMaster {
-  return {
-    id: r.id as string,
-    manufacturer: (r.manufacturer as string) ?? '',
-    model: (r.model as string) ?? '',
-    checklist_items: parseChecklistItems(r.checklist_items),
-    created_at: r.created_at as string,
-    updated_at: r.updated_at as string,
-  }
-}
+import {
+  nextDueFromCompletedDate,
+  intervalMonthsLabel,
+} from '@/lib/inspection-interval'
 
 type ItemStatus = 'ok' | 'ng' | 'na'
 
@@ -227,7 +221,7 @@ export default function MaintenancePage() {
       console.error('[定期点検] メンテナンスマスタ取得エラー:', error.message)
       return []
     }
-    const list = (data ?? []).map((row) => mapMasterRow(row as Record<string, unknown>))
+    const list = (data ?? []).map((row) => mapMaintenanceModelMasterRow(row as Record<string, unknown>))
     setMasters(list)
     return list
   }, [supabase])
@@ -344,7 +338,8 @@ export default function MaintenancePage() {
         created_by: user?.id ?? null,
       })
 
-      const nextDue = format(addYears(new Date(completedDate), 1), 'yyyy-MM-dd')
+      const intervalMonths = masterForDevice?.inspection_interval_months ?? 12
+      const nextDue = nextDueFromCompletedDate(completedDate, intervalMonths)
       await supabase
         .from('devices')
         .update({
@@ -361,7 +356,9 @@ export default function MaintenancePage() {
       }
 
       await loadRecentForDevice(device.id)
-      alert('定期点検を記録しました。次回点検予定は1年後に更新されています。')
+      alert(
+        `定期点検を記録しました。次回点検予定は ${intervalMonthsLabel(intervalMonths)} 後（${nextDue.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}）に更新されています。`,
+      )
       setNotes('')
       const freshMasters = await fetchMasters()
       const m = matchMasterForDevice(freshMasters, deviceAfterSave.manufacturer, deviceAfterSave.model)
@@ -384,7 +381,7 @@ export default function MaintenancePage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">定期点検（読み取り）</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            機器コードを手入力またはバーコードで読み取り、対象機器のカルテと定期点検（1年サイクル）を記録します。
+            機器コードを手入力またはバーコードで読み取り、対象機器のカルテと定期点検を記録します（次回予定は型式マスタの点検期間に従います）。
           </p>
         </div>
         <Link
@@ -496,6 +493,14 @@ export default function MaintenancePage() {
                       : '—'}
                   </dd>
                 </div>
+                {masterForDevice && (
+                  <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                    <dt className="text-slate-500 shrink-0">点検期間（型式マスタ）</dt>
+                    <dd className="text-right font-medium">
+                      {intervalMonthsLabel(masterForDevice.inspection_interval_months)}
+                    </dd>
+                  </div>
+                )}
                 <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
                   <dt className="text-slate-500 shrink-0">次回点検予定</dt>
                   <dd className="text-right">
@@ -578,9 +583,13 @@ export default function MaintenancePage() {
 
           <Card className="border-0 shadow-sm border-t-4 border-t-blue-600">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold">定期点検（1年サイクル）</CardTitle>
+              <CardTitle className="text-base font-semibold">定期点検</CardTitle>
               <p className="text-xs text-slate-500 font-normal">
-                記録後、次回点検予定日は実施日から1年後に自動更新されます。
+                記録後、次回点検予定日は型式マスタの点検期間
+                {masterForDevice
+                  ? `（${intervalMonthsLabel(masterForDevice.inspection_interval_months)}）`
+                  : ''}
+                後に自動更新されます。
               </p>
             </CardHeader>
             <CardContent>

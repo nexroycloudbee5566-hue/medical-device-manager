@@ -4,6 +4,22 @@ import type {
   ChecklistResultEntry,
   MaintenanceModelMaster,
 } from '@/lib/types'
+export function mapMaintenanceModelMasterRow(r: Record<string, unknown>): MaintenanceModelMaster {
+  const rawInterval = r.inspection_interval_months
+  const n = typeof rawInterval === 'number' ? rawInterval : Number(rawInterval)
+  const inspection_interval_months =
+    Number.isFinite(n) && n >= 1 ? Math.min(120, Math.round(n)) : 12
+
+  return {
+    id: r.id as string,
+    manufacturer: (r.manufacturer as string) ?? '',
+    model: (r.model as string) ?? '',
+    checklist_items: parseChecklistItems(r.checklist_items),
+    inspection_interval_months,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+  }
+}
 
 export function normalizeModelKeyPart(s: string | null | undefined): string {
   try {

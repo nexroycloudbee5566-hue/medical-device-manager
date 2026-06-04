@@ -17,27 +17,13 @@ import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
 import { RefreshCw, Wrench, ShoppingCart, Hammer, ChevronRight, CalendarClock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, parse, startOfDay } from 'date-fns'
-import { matchMasterForDevice, parseChecklistItems } from '@/lib/maintenance-master'
-
-function mapMasterRow(r: Record<string, unknown>): MaintenanceModelMaster {
-  return {
-    id: r.id as string,
-    manufacturer: (r.manufacturer as string) ?? '',
-    model: (r.model as string) ?? '',
-    checklist_items: parseChecklistItems(r.checklist_items),
-    created_at: r.created_at as string,
-    updated_at: r.updated_at as string,
-  }
-}
-
-/** 定期点検画面と同じ照合で、マスタがあり点検項目が1件以上ある場合のみ true */
-function deviceHasInspectionMaster(
-  masters: MaintenanceModelMaster[],
-  dev: Pick<Device, 'manufacturer' | 'model'>,
-): boolean {
-  const m = matchMasterForDevice(masters, dev.manufacturer, dev.model)
-  return m != null && m.checklist_items.length > 0
-}
+import { deviceHasInspectionMaster, mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
+import {
+  getIntervalMonthsForDevice,
+  isInspectionStale,
+  inspectionDueDate,
+  intervalMonthsLabel,
+} from '@/lib/inspection-interval'
 
 function requestProgressPct(type: RequestType, status: string): number {
   const statusList = getStatusList(type)
@@ -97,7 +83,12 @@ export default function DashboardPage() {
   const [requests, setRequests] = useState<Request[]>([])
   const [loading, setLoading] = useState(true)
   const [inspectionStale, setInspectionStale] = useState<
-    { device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>; lastInspection: string | null }[]
+    {
+      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>
+      lastInspection: string | null
+      intervalMonths: number
+      dueDate: string | null
+    }[]
   >([])
 
   const fetchInspectionStale = useCallback(async () => {
@@ -114,7 +105,9 @@ export default function DashboardPage() {
       supabase.from('maintenance_model_masters').select('*'),
     ])
 
-    const masters = (mastersRaw ?? []).map((row) => mapMasterRow(row as Record<string, unknown>))
+    const masters = (mastersRaw ?? []).map((row) =>
+      mapMaintenanceModelMasterRow(row as Record<string, unknown>),
+    )
 
     const latestByDevice = new Map<string, string>()
     for (const row of records ?? []) {
@@ -126,18 +119,23 @@ export default function DashboardPage() {
     }
 
     const today = startOfDay(new Date())
-    const stale: { device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>; lastInspection: string | null }[] = []
+    const stale: {
+      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>
+      lastInspection: string | null
+      intervalMonths: number
+      dueDate: string | null
+    }[] = []
     for (const dev of (devices ?? []) as Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>[]) {
       if (!deviceHasInspectionMaster(masters, dev)) continue
       const last = latestByDevice.get(dev.id) ?? null
-      if (!last) {
-        stale.push({ device: dev, lastInspection: null })
-        continue
-      }
-      const lastDay = parse(last, 'yyyy-MM-dd', new Date())
-      if (Number.isNaN(lastDay.getTime())) continue
-      const days = differenceInCalendarDays(today, startOfDay(lastDay))
-      if (days >= 365) stale.push({ device: dev, lastInspection: last })
+      const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
+      if (!isInspectionStale(last, intervalMonths, today)) continue
+      stale.push({
+        device: dev,
+        lastInspection: last,
+        intervalMonths,
+        dueDate: inspectionDueDate(last, intervalMonths),
+      })
     }
 
     stale.sort((a, b) => {
@@ -268,10 +266,10 @@ export default function DashboardPage() {
           <div className="min-w-0 space-y-1">
             <CardTitle className="text-base font-semibold text-amber-950 flex items-center gap-2">
               <CalendarClock className="h-5 w-5 text-amber-700 shrink-0" />
-              定期点検（1年以上未実施）
+              定期点検（期間超過・未実施）
             </CardTitle>
             <p className="text-xs text-amber-900/75 font-normal leading-snug">
-              メンテナンスマスタ（点検項目あり）が紐づく稼働中機器のみ表示します。
+              型式マスタで設定した点検期間を過ぎた機器、または点検記録のない機器を表示します。
             </p>
           </div>
           <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white shrink-0">
@@ -283,11 +281,11 @@ export default function DashboardPage() {
             <p className="text-sm text-amber-900/70 py-2">読み込み中…</p>
           ) : inspectionStale.length === 0 ? (
             <p className="text-sm text-amber-900/70 py-1">
-              メンテナンスマスタが登録されている稼働中機器のうち、直近の定期点検から365日以上経過（または点検記録なし）のものはありません。
+              点検期間内の機器のみです。期間超過の機器はありません。
             </p>
           ) : (
             <ul className="max-h-72 overflow-y-auto divide-y divide-amber-100 text-sm">
-              {inspectionStale.map(({ device: dev, lastInspection }) => (
+              {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, dueDate }) => (
                 <li key={dev.id} className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 space-y-0.5">
                     <p className="font-medium text-slate-900 truncate">{dev.name}</p>
@@ -300,9 +298,29 @@ export default function DashboardPage() {
                       {[dev.manufacturer, dev.model].filter(Boolean).join(' / ') || null}
                     </p>
                     <p className="text-xs text-amber-900 font-medium">
-                      {lastInspection === null
-                        ? '定期点検の記録がありません'
-                        : `最終点検: ${lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}（${differenceInCalendarDays(startOfDay(new Date()), startOfDay(parse(lastInspection, 'yyyy-MM-dd', new Date())))} 日前）`}
+                      点検期間: {intervalMonthsLabel(intervalMonths)}
+                      {lastInspection === null ? (
+                        <> · 定期点検の記録がありません</>
+                      ) : (
+                        <>
+                          {' '}
+                          · 最終点検:{' '}
+                          {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                          {dueDate && (
+                            <>
+                              {' '}
+                              · 期限:{' '}
+                              {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                              （
+                              {differenceInCalendarDays(
+                                startOfDay(new Date()),
+                                startOfDay(parse(dueDate, 'yyyy-MM-dd', new Date())),
+                              )}
+                              日超過）
+                            </>
+                          )}
+                        </>
+                      )}
                     </p>
                   </div>
                   <Link

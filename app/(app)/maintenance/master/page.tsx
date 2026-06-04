@@ -22,6 +22,11 @@ import {
   serializeChecklistTemplate,
   cloneChecklistItemsFromTemplate,
 } from '@/lib/maintenance-master'
+import {
+  INSPECTION_INTERVAL_OPTIONS,
+  normalizeIntervalMonths,
+  DEFAULT_INSPECTION_INTERVAL_MONTHS,
+} from '@/lib/inspection-interval'
 import { MaintenanceChecklistItemsEditor } from '@/components/maintenance-checklist-items-editor'
 
 type Pair = { manufacturer: string; model: string }
@@ -72,6 +77,9 @@ export default function MaintenanceMasterPage() {
   const [model, setModel] = useState('')
   const [masterId, setMasterId] = useState<string | null>(null)
   const [modelItems, setModelItems] = useState<MaintenanceChecklistItem[]>([])
+  const [inspectionIntervalMonths, setInspectionIntervalMonths] = useState(
+    DEFAULT_INSPECTION_INTERVAL_MONTHS,
+  )
   const [applyTemplateId, setApplyTemplateId] = useState('')
 
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
@@ -112,14 +120,18 @@ export default function MaintenanceMasterPage() {
       if (row) {
         const { data } = await supabase
           .from('maintenance_model_masters')
-          .select('checklist_items')
+          .select('checklist_items, inspection_interval_months')
           .eq('id', row.id)
           .maybeSingle()
         setMasterId(row.id)
         setModelItems(parseChecklistItems(data?.checklist_items))
+        setInspectionIntervalMonths(
+          normalizeIntervalMonths(data?.inspection_interval_months),
+        )
       } else {
         setMasterId(null)
         setModelItems([])
+        setInspectionIntervalMonths(DEFAULT_INSPECTION_INTERVAL_MONTHS)
       }
       setApplyTemplateId('')
     },
@@ -187,6 +199,7 @@ export default function MaintenanceMasterPage() {
             manufacturer: man,
             model: mod,
             checklist_items,
+            inspection_interval_months: normalizeIntervalMonths(inspectionIntervalMonths),
             updated_at: new Date().toISOString(),
           })
           .eq('id', masterId)
@@ -197,6 +210,7 @@ export default function MaintenanceMasterPage() {
             manufacturer: man,
             model: mod,
             checklist_items,
+            inspection_interval_months: normalizeIntervalMonths(inspectionIntervalMonths),
           })
           .select('id')
           .single()
@@ -392,6 +406,7 @@ export default function MaintenanceMasterPage() {
                     setModel('')
                     setMasterId(null)
                     setModelItems([])
+                    setInspectionIntervalMonths(DEFAULT_INSPECTION_INTERVAL_MONTHS)
                     setApplyTemplateId('')
                     return
                   }
@@ -437,6 +452,30 @@ export default function MaintenanceMasterPage() {
                   className="bg-white"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5 max-w-md">
+              <Label>点検期間（この型式の定期点検サイクル）</Label>
+              <Select
+                value={String(inspectionIntervalMonths)}
+                onValueChange={(v) =>
+                  setInspectionIntervalMonths(normalizeIntervalMonths(Number(v)))
+                }
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INSPECTION_INTERVAL_OPTIONS.map((o) => (
+                    <SelectItem key={o.months} value={String(o.months)}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                ダッシュボードの未実施判定・次回点検予定・年間計画に反映されます。
+              </p>
             </div>
 
             {templates.length > 0 && (
@@ -489,8 +528,10 @@ export default function MaintenanceMasterPage() {
       )}
 
       <p className="text-xs text-slate-500">
-        ※ 初回利用時にテンプレート保存でエラーになる場合は、Supabase SQL Editor で{' '}
-        <code className="text-[11px] bg-slate-100 px-1 rounded">supabase/migration_checklist_templates.sql</code>{' '}
+        ※ テーブル未作成で保存エラーになる場合は SQL Editor で{' '}
+        <code className="text-[11px] bg-slate-100 px-1 rounded">migration_checklist_templates.sql</code>
+        {' / '}
+        <code className="text-[11px] bg-slate-100 px-1 rounded">migration_inspection_interval.sql</code>
         を実行してください。
       </p>
     </div>

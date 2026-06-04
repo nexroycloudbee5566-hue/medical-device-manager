@@ -157,6 +157,8 @@ export interface MaintenanceModelMaster {
   manufacturer: string
   model: string
   checklist_items: MaintenanceChecklistItem[]
+  /** 定期点検の周期（月）。型式ごとに設定 */
+  inspection_interval_months: number
   created_at: string
   updated_at: string
 }
