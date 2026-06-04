@@ -3,10 +3,9 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Device, Hospital, MaintenanceModelMaster } from '@/lib/types'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import type { Device, Hospital } from '@/lib/types'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -14,21 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import { format, parse } from 'date-fns'
-import { ja } from 'date-fns/locale'
 import {
   CalendarRange,
-  ChevronDown,
-  ChevronRight,
   Loader2,
   RefreshCw,
   AlertTriangle,
@@ -43,90 +30,138 @@ import {
   type AnnualPlanStatus,
 } from '@/lib/annual-maintenance-plan'
 
+const STATUS_CHIP: Record<AnnualPlanStatus, string> = {
+  completed: 'bg-green-50 text-green-800 border-green-200',
+  overdue: 'bg-red-50 text-red-800 border-red-200',
+  due_this_month: 'bg-amber-50 text-amber-900 border-amber-200',
+  scheduled: 'bg-blue-50 text-blue-800 border-blue-100',
+  unscheduled: 'bg-slate-50 text-slate-600 border-slate-200',
+}
+
+type BoardColumn = {
+  key: string
+  title: string
+  subtitle?: string
+  headerClass?: string
+  items: AnnualPlanItem[]
+}
+
 const STATUS_LABEL: Record<AnnualPlanStatus, string> = {
-  completed: '年内完了',
+  completed: '完了',
   overdue: '期限超過',
-  due_this_month: '今月予定',
+  due_this_month: '今月',
   scheduled: '予定',
-  unscheduled: '予定未設定',
+  unscheduled: '未設定',
 }
 
-const STATUS_BADGE: Record<AnnualPlanStatus, string> = {
-  completed: 'bg-green-100 text-green-800 border-0',
-  overdue: 'bg-red-100 text-red-800 border-0',
-  due_this_month: 'bg-amber-100 text-amber-900 border-0',
-  scheduled: 'bg-blue-50 text-blue-800 border-0',
-  unscheduled: 'bg-slate-100 text-slate-600 border-0',
+function sortByBarcode(items: AnnualPlanItem[]): AnnualPlanItem[] {
+  return [...items].sort((a, b) => {
+    const ba = (a.barcode ?? '').localeCompare(b.barcode ?? '', 'ja')
+    if (ba !== 0) return ba
+    return a.name.localeCompare(b.name, 'ja')
+  })
 }
 
-function PlanItemRow({ item }: { item: AnnualPlanItem }) {
-  const dateLabel = item.plannedDate
-    ? format(parse(item.plannedDate, 'yyyy-MM-dd', new Date()), 'M月d日', { locale: ja })
-    : '—'
-
+function PlanChip({ item }: { item: AnnualPlanItem }) {
+  const label = item.barcode?.trim() || item.name
   return (
-    <TableRow>
-      <TableCell className="font-medium text-slate-800">{item.name}</TableCell>
-      <TableCell className="text-slate-600 text-sm">{item.barcode ?? '—'}</TableCell>
-      <TableCell className="text-slate-600 text-sm">
-        {[item.manufacturer, item.model].filter(Boolean).join(' ') || '—'}
-      </TableCell>
-      <TableCell className="text-slate-600 text-sm">{item.department ?? '—'}</TableCell>
-      <TableCell className="text-slate-600 text-sm">{dateLabel}</TableCell>
-      <TableCell>
-        <Badge className={STATUS_BADGE[item.status]}>{STATUS_LABEL[item.status]}</Badge>
-      </TableCell>
-      <TableCell className="text-right">
-        <Link
-          href="/maintenance"
-          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'text-xs')}
-        >
-          点検へ
-        </Link>
-      </TableCell>
-    </TableRow>
+    <Link
+      href="/maintenance"
+      title={[item.name, item.plannedDate, STATUS_LABEL[item.status]].filter(Boolean).join(' · ')}
+      className={cn(
+        'block rounded border px-1.5 py-1 text-xs font-mono leading-tight hover:opacity-90 transition-opacity',
+        STATUS_CHIP[item.status],
+      )}
+    >
+      {label}
+    </Link>
   )
 }
 
-function MonthSection({
-  title,
-  count,
-  defaultOpen,
-  children,
+function AnnualPlanBoard({
+  overdue,
+  months,
+  unscheduled,
+  year,
 }: {
-  title: string
-  count: number
-  defaultOpen?: boolean
-  children: React.ReactNode
+  overdue: AnnualPlanItem[]
+  months: { month: number; label: string; items: AnnualPlanItem[] }[]
+  unscheduled: AnnualPlanItem[]
+  year: number
 }) {
-  const [open, setOpen] = useState(defaultOpen ?? count > 0)
+  const currentMonth = new Date().getMonth() + 1
+
+  const columns: BoardColumn[] = useMemo(() => {
+    const cols: BoardColumn[] = []
+    if (overdue.length > 0) {
+      cols.push({
+        key: 'overdue',
+        title: '期限超過',
+        headerClass: 'bg-red-100 text-red-900 border-red-200',
+        items: sortByBarcode(overdue),
+      })
+    }
+    for (const g of months) {
+      cols.push({
+        key: `m-${g.month}`,
+        title: g.label,
+        subtitle: `${year}`,
+        headerClass:
+          g.month === currentMonth
+            ? 'bg-blue-100 text-blue-900 border-blue-200'
+            : 'bg-slate-100 text-slate-800 border-slate-200',
+        items: sortByBarcode(g.items),
+      })
+    }
+    if (unscheduled.length > 0) {
+      cols.push({
+        key: 'unscheduled',
+        title: '未設定',
+        headerClass: 'bg-slate-200 text-slate-700 border-slate-300',
+        items: sortByBarcode(unscheduled),
+      })
+    }
+    return cols
+  }, [overdue, months, unscheduled, year, currentMonth])
+
+  if (columns.every((c) => c.items.length === 0)) {
+    return (
+      <p className="text-sm text-slate-500 text-center py-12">
+        表示対象の機器がありません
+      </p>
+    )
+  }
 
   return (
-    <Card className="border-0 shadow-sm">
-      <button
-        type="button"
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 rounded-t-lg transition-colors"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <div className="flex items-center gap-2">
-          {open ? (
-            <ChevronDown className="h-4 w-4 text-slate-400" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-slate-400" />
-          )}
-          <span className="font-semibold text-slate-800">{title}</span>
-          <Badge variant="secondary" className="font-normal">
-            {count} 件
-          </Badge>
-        </div>
-      </button>
-      {open && count > 0 && <CardContent className="pt-0 pb-4 px-0">{children}</CardContent>}
-      {open && count === 0 && (
-        <CardContent className="pt-0 pb-4">
-          <p className="text-sm text-slate-400 px-4">該当する機器はありません</p>
-        </CardContent>
-      )}
-    </Card>
+    <div className="overflow-x-auto pb-2 -mx-1 px-1">
+      <div className="inline-flex gap-2 min-w-full align-top">
+        {columns.map((col) => (
+          <div
+            key={col.key}
+            className="flex flex-col w-[7.25rem] min-w-[7.25rem] shrink-0"
+          >
+            <div
+              className={cn(
+                'text-center rounded-t-lg border px-1 py-2',
+                col.headerClass ?? 'bg-slate-100 text-slate-800 border-slate-200',
+              )}
+            >
+              <p className="text-sm font-bold leading-none">{col.title}</p>
+              <p className="text-[10px] mt-0.5 opacity-80 tabular-nums">
+                {col.items.length}件
+              </p>
+            </div>
+            <div className="flex-1 min-h-[10rem] max-h-[70vh] overflow-y-auto rounded-b-lg border border-t-0 border-slate-200 bg-white p-1.5 space-y-1">
+              {col.items.length === 0 ? (
+                <p className="text-[10px] text-slate-300 text-center py-4">—</p>
+              ) : (
+                col.items.map((item) => <PlanChip key={item.deviceId} item={item} />)
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -221,7 +256,7 @@ export default function AnnualMaintenancePage() {
   const yearOptions = [currentYear - 1, currentYear, currentYear + 1]
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-6 max-w-[100vw] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -229,7 +264,7 @@ export default function AnnualMaintenancePage() {
             年間メンテナンス計画
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            メンテナンスマスタが設定された稼働中機器の、{year}年の定期点検予定を月別に表示します。
+            {year}年の定期点検予定を月別の横一覧で表示します（ME No. をクリックで点検画面へ）。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -301,72 +336,42 @@ export default function AnnualMaintenancePage() {
         </Card>
       </div>
 
+      <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+        <span className="inline-flex items-center gap-1">
+          <span className="w-3 h-3 rounded border bg-green-50 border-green-200" /> 完了
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="w-3 h-3 rounded border bg-red-50 border-red-200" /> 期限超過
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="w-3 h-3 rounded border bg-amber-50 border-amber-200" /> 今月予定
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="w-3 h-3 rounded border bg-blue-50 border-blue-100" /> 予定
+        </span>
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
         </div>
       ) : (
-        <div className="space-y-4">
-          {overdue.length > 0 && (
-            <Card className="border-red-200 bg-red-50/50 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-red-800 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  期限超過・要対応（{overdue.length}件）
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-0 pb-2">
-                <PlanTable items={overdue} />
-              </CardContent>
-            </Card>
-          )}
-
-          {months.map((group) => (
-            <MonthSection
-              key={group.month}
-              title={`${year}年 ${group.label}`}
-              count={group.items.length}
-              defaultOpen={group.month === new Date().getMonth() + 1}
-            >
-              <PlanTable items={group.items} />
-            </MonthSection>
-          ))}
-
-          {unscheduled.length > 0 && (
-            <MonthSection title="予定日未設定" count={unscheduled.length} defaultOpen={false}>
-              <PlanTable items={unscheduled} />
-            </MonthSection>
-          )}
-        </div>
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-3 sm:p-4">
+            <AnnualPlanBoard
+              overdue={overdue}
+              months={months}
+              unscheduled={unscheduled}
+              year={year}
+            />
+          </CardContent>
+        </Card>
       )}
 
       <p className="text-xs text-slate-400">
-        次回予定日は機器台帳の「次回点検予定」を優先し、未入力の場合は直近の定期点検完了日に型式マスタの点検期間を加えた日付を表示します。
-        対象はメンテナンスマスタに点検項目が登録された稼働中機器のみです。
+        横にスクロールして全月を表示できます。各列は予定月（完了済みは実施月）ごとの ME No. です。
+        次回予定は台帳の次回点検予定、または直近点検＋型式マスタの点検期間から算出します。
       </p>
     </div>
-  )
-}
-
-function PlanTable({ items }: { items: AnnualPlanItem[] }) {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>機器名</TableHead>
-          <TableHead>バーコード</TableHead>
-          <TableHead>メーカー・型式</TableHead>
-          <TableHead>部署</TableHead>
-          <TableHead>予定日</TableHead>
-          <TableHead>状態</TableHead>
-          <TableHead className="text-right">操作</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.map((item) => (
-          <PlanItemRow key={item.deviceId} item={item} />
-        ))}
-      </TableBody>
-    </Table>
   )
 }
