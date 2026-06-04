@@ -1,6 +1,15 @@
 import { format, parse, startOfDay, isValid } from 'date-fns'
 import type { Device, MaintenanceModelMaster } from '@/lib/types'
-import { deviceHasInspectionMaster, matchMasterForDevice } from '@/lib/maintenance-master'
+import { matchMasterForDevice } from '@/lib/maintenance-master'
+
+/** 年間計画の対象: メンテナンスマスタが紐づく機器（点検項目0件でも表示） */
+export function deviceEligibleForAnnualPlan(
+  masters: MaintenanceModelMaster[],
+  dev: Pick<{ manufacturer?: string | null; model?: string | null; status?: string }, 'manufacturer' | 'model' | 'status'>,
+): boolean {
+  if (dev.status === 'disposed' || dev.status === 'inactive') return false
+  return matchMasterForDevice(masters, dev.manufacturer, dev.model) != null
+}
 import { derivePlannedDate, getIntervalMonthsForDevice } from '@/lib/inspection-interval'
 
 export type AnnualPlanStatus =
@@ -71,8 +80,7 @@ export function buildAnnualPlanItems(
   const items: AnnualPlanItem[] = []
 
   for (const dev of devices) {
-    if (dev.status !== 'active') continue
-    if (!deviceHasInspectionMaster(masters, dev)) continue
+    if (!deviceEligibleForAnnualPlan(masters, dev)) continue
 
     const lastCompleted = latestInspectionByDevice.get(dev.id) ?? null
     const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
@@ -117,14 +125,9 @@ export function groupPlanByMonth(
     byMonth.set(m, [])
   }
 
-  const yearStart = parse(`${year}-01-01`, 'yyyy-MM-dd', new Date())
+  const todayStart = startOfDay(new Date())
 
   for (const item of items) {
-    if (item.status === 'unscheduled' && !item.completedInYear) {
-      unscheduled.push(item)
-      continue
-    }
-
     if (item.completedInYear && item.lastCompletedDate) {
       const d = parseYmd(item.lastCompletedDate)
       if (d && d.getFullYear() === year) {
@@ -133,22 +136,38 @@ export function groupPlanByMonth(
       }
     }
 
-    if (item.status === 'overdue') {
-      const planned = parseYmd(item.plannedDate)
-      if (planned && planned < yearStart) {
-        overdue.push(item)
-        continue
-      }
+    if (!item.plannedDate) {
+      if (!item.completedInYear) unscheduled.push(item)
+      continue
     }
 
-    if (!item.plannedDate) continue
     const planned = parseYmd(item.plannedDate)
-    if (!planned || planned.getFullYear() !== year) continue
-
-    if (item.status === 'overdue' && planned < startOfDay(new Date())) {
-      overdue.push(item)
+    if (!planned) {
+      if (!item.completedInYear) unscheduled.push(item)
+      continue
     }
-    byMonth.get(planned.getMonth() + 1)!.push(item)
+
+    const plannedYear = planned.getFullYear()
+
+    if (plannedYear < year && !item.completedInYear) {
+      overdue.push(item)
+      continue
+    }
+
+    if (plannedYear > year && !item.completedInYear) {
+      byMonth.get(12)!.push(item)
+      continue
+    }
+
+    if (plannedYear === year) {
+      if (item.status === 'overdue' && planned < todayStart) {
+        overdue.push(item)
+      }
+      byMonth.get(planned.getMonth() + 1)!.push(item)
+      continue
+    }
+
+    if (!item.completedInYear) unscheduled.push(item)
   }
 
   const monthLabels = [

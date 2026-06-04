@@ -83,11 +83,13 @@ function AnnualPlanBoard({
   months,
   unscheduled,
   year,
+  totalPlanItems,
 }: {
   overdue: AnnualPlanItem[]
   months: { month: number; label: string; items: AnnualPlanItem[] }[]
   unscheduled: AnnualPlanItem[]
   year: number
+  totalPlanItems: number
 }) {
   const currentMonth = new Date().getMonth() + 1
 
@@ -124,11 +126,19 @@ function AnnualPlanBoard({
     return cols
   }, [overdue, months, unscheduled, year, currentMonth])
 
-  if (columns.every((c) => c.items.length === 0)) {
+  if (totalPlanItems === 0) {
     return (
-      <p className="text-sm text-slate-500 text-center py-12">
-        表示対象の機器がありません
-      </p>
+      <div className="text-sm text-slate-500 text-center py-12 space-y-2 px-4">
+        <p className="font-medium text-slate-700">表示対象の機器がありません</p>
+        <p className="text-xs leading-relaxed">
+          メンテナンスマスタ（メーカー・型式）が登録された機器が対象です。
+          <br />
+          マスタ未登録の場合は「メンテナンスマスタ」で型式を登録し、必要なら「初期計画（月均等）」で次回予定日を設定してください。
+        </p>
+        <Link href="/maintenance/master" className="text-blue-600 underline text-xs">
+          メンテナンスマスタへ
+        </Link>
+      </div>
     )
   }
 
@@ -173,29 +183,42 @@ export default function AnnualMaintenancePage() {
   const [hospitals, setHospitals] = useState<Hospital[]>([])
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<AnnualPlanItem[]>([])
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   const fetchPlan = useCallback(async () => {
     setLoading(true)
+    setFetchError(null)
     const yearStart = `${year}-01-01`
     const yearEnd = `${year}-12-31`
 
-    const [{ data: devicesRaw }, { data: records }, { data: mastersRaw }, { data: hospitalsRaw }] =
-      await Promise.all([
-        supabase
-          .from('devices')
-          .select('*, hospitals(name)')
-          .eq('status', 'active')
-          .order('name'),
-        supabase
-          .from('maintenance_records')
-          .select('device_id, completed_date')
-          .eq('type', '定期点検')
-          .not('completed_date', 'is', null),
-        supabase.from('maintenance_model_masters').select('*'),
-        supabase.from('hospitals').select('*').order('name'),
-      ])
+    const [devRes, recRes, masRes, hospRes] = await Promise.all([
+      supabase
+        .from('devices')
+        .select('*, hospitals(name)')
+        .not('status', 'eq', 'disposed')
+        .not('status', 'eq', 'inactive')
+        .order('barcode'),
+      supabase
+        .from('maintenance_records')
+        .select('device_id, completed_date')
+        .eq('type', '定期点検')
+        .not('completed_date', 'is', null),
+      supabase.from('maintenance_model_masters').select('*'),
+      supabase.from('hospitals').select('*').order('name'),
+    ])
 
-    setHospitals((hospitalsRaw as Hospital[]) ?? [])
+    if (devRes.error || masRes.error) {
+      const msg = devRes.error?.message ?? masRes.error?.message ?? 'データ取得エラー'
+      setFetchError(msg)
+      setItems([])
+      setLoading(false)
+      return
+    }
+
+    setHospitals((hospRes.data as Hospital[]) ?? [])
+    const devicesRaw = devRes.data
+    const records = recRes.data
+    const mastersRaw = masRes.data
 
     const masters = (mastersRaw ?? []).map((row) =>
       mapMaintenanceModelMasterRow(row as Record<string, unknown>),
@@ -358,19 +381,24 @@ export default function AnnualMaintenancePage() {
       ) : (
         <Card className="border-0 shadow-sm overflow-hidden">
           <CardContent className="p-3 sm:p-4">
-            <AnnualPlanBoard
-              overdue={overdue}
-              months={months}
-              unscheduled={unscheduled}
-              year={year}
-            />
+            {fetchError ? (
+              <p className="text-sm text-red-600 py-8 text-center">{fetchError}</p>
+            ) : (
+              <AnnualPlanBoard
+                overdue={overdue}
+                months={months}
+                unscheduled={unscheduled}
+                year={year}
+                totalPlanItems={items.length}
+              />
+            )}
           </CardContent>
         </Card>
       )}
 
       <p className="text-xs text-slate-400">
-        横にスクロールして全月を表示できます。各列は予定月（完了済みは実施月）ごとの ME No. です。
-        次回予定は台帳の次回点検予定、または直近点検＋型式マスタの点検期間から算出します。
+        横にスクロールして全月を表示できます。翌年予定の機器は12月列に表示します。
+        次回予定は台帳の「次回点検予定」を優先します（未設定時は直近点検＋点検期間）。
       </p>
     </div>
   )
