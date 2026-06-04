@@ -194,7 +194,7 @@ export default function AnnualMaintenancePage() {
     const [devRes, recRes, masRes, hospRes] = await Promise.all([
       supabase
         .from('devices')
-        .select('*, hospitals(name)')
+        .select('*')
         .not('status', 'eq', 'disposed')
         .not('status', 'eq', 'inactive')
         .order('barcode'),
@@ -215,7 +215,9 @@ export default function AnnualMaintenancePage() {
       return
     }
 
-    setHospitals((hospRes.data as Hospital[]) ?? [])
+    if (!hospRes.error) {
+      setHospitals((hospRes.data as Hospital[]) ?? [])
+    }
     const devicesRaw = devRes.data
     const records = recRes.data
     const mastersRaw = masRes.data
