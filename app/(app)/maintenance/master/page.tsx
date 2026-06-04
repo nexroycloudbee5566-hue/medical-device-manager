@@ -28,6 +28,12 @@ import {
   DEFAULT_INSPECTION_INTERVAL_MONTHS,
 } from '@/lib/inspection-interval'
 import { MaintenanceChecklistItemsEditor } from '@/components/maintenance-checklist-items-editor'
+import {
+  filterDevicesForInitialPlan,
+  buildEvenMonthlyDueDates,
+  summarizeDueDatesByMonth,
+  type DeviceForInitialPlan,
+} from '@/lib/initial-maintenance-plan'
 
 type Pair = { manufacturer: string; model: string }
 
@@ -71,6 +77,7 @@ export default function MaintenanceMasterPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
+  const [planningInitial, setPlanningInitial] = useState(false)
 
   const [selectedKey, setSelectedKey] = useState('')
   const [manufacturer, setManufacturer] = useState('')
@@ -182,6 +189,72 @@ export default function MaintenanceMasterPage() {
     setApplyTemplateId('')
   }
 
+  const runInitialMaintenancePlan = useCallback(
+    async (man: string, mod: string, options?: { askConfirm?: boolean }) => {
+      const [{ data: devicesRaw }, { data: records }] = await Promise.all([
+        supabase
+          .from('devices')
+          .select('id, barcode, name, manufacturer, model, status, next_maintenance_due')
+          .eq('status', 'active'),
+        supabase
+          .from('maintenance_records')
+          .select('device_id')
+          .eq('type', '定期点検')
+          .not('completed_date', 'is', null),
+      ])
+
+      const inspected = new Set<string>()
+      for (const row of records ?? []) {
+        const id = row.device_id as string | null
+        if (id) inspected.add(id)
+      }
+
+      const targets = filterDevicesForInitialPlan(
+        (devicesRaw ?? []) as DeviceForInitialPlan[],
+        man,
+        mod,
+        inspected,
+      )
+
+      if (targets.length === 0) {
+        if (options?.askConfirm !== false) {
+          alert(
+            '初期計画の対象がありません。\n（すでに次回点検予定がある、または定期点検の記録がある機器は対象外です）',
+          )
+        }
+        return 0
+      }
+
+      const dueMap = buildEvenMonthlyDueDates(targets.map((t) => t.id))
+      const monthSummary = summarizeDueDatesByMonth(dueMap)
+        .filter((s) => s.count > 0)
+        .map((s) => `${s.month}月 ${s.count}台`)
+        .join(' / ')
+
+      if (options?.askConfirm !== false) {
+        const ok = confirm(
+          `対象 ${targets.length} 台に、次回点検予定を月ごとに均等配分します（各月15日）。\n\n${monthSummary}\n\n※ 定期点検未実施かつ次回予定未設定の機器のみ。よろしいですか？`,
+        )
+        if (!ok) return 0
+      }
+
+      const updatedAt = new Date().toISOString()
+      for (const [deviceId, dueDate] of dueMap) {
+        const { error } = await supabase
+          .from('devices')
+          .update({ next_maintenance_due: dueDate, updated_at: updatedAt })
+          .eq('id', deviceId)
+        if (error) {
+          alert(`初期計画の保存に失敗しました: ${error.message}`)
+          return 0
+        }
+      }
+
+      return targets.length
+    },
+    [supabase],
+  )
+
   async function saveMaster() {
     const man = manufacturer.trim()
     const mod = model.trim()
@@ -190,6 +263,7 @@ export default function MaintenanceMasterPage() {
       return
     }
     const checklist_items = serializeChecklistTemplate(modelItems)
+    const isNewMaster = !masterId
     setSaving(true)
     try {
       if (masterId) {
@@ -218,9 +292,49 @@ export default function MaintenanceMasterPage() {
       }
       await loadAll()
       setSelectedKey(pairKey({ manufacturer: man, model: mod }))
-      alert('メンテナンスマスタを保存しました。')
+
+      if (isNewMaster) {
+        const ok = confirm(
+          'メンテナンスマスタを保存しました。\n\n同じ型式の機器に、初回のみ「月均等」の点検計画を組みますか？\n（未点検・次回予定なしの機器だけ対象）',
+        )
+        if (ok) {
+          setPlanningInitial(true)
+          try {
+            const n = await runInitialMaintenancePlan(man, mod, { askConfirm: false })
+            if (n > 0) {
+              alert(`${n} 台に次回点検予定を設定しました。ダッシュボードの一括未実施表示が解消されます。`)
+            }
+          } finally {
+            setPlanningInitial(false)
+          }
+        }
+      } else {
+        alert('メンテナンスマスタを保存しました。')
+      }
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleInitialPlanClick() {
+    const man = manufacturer.trim()
+    const mod = model.trim()
+    if (!man || !mod) {
+      alert('メーカーと型式を入力してください。')
+      return
+    }
+    if (!masterId) {
+      alert('先に型式マスタを保存してください。')
+      return
+    }
+    setPlanningInitial(true)
+    try {
+      const n = await runInitialMaintenancePlan(man, mod, { askConfirm: true })
+      if (n > 0) {
+        alert(`${n} 台に次回点検予定を設定しました。`)
+      }
+    } finally {
+      setPlanningInitial(false)
     }
   }
 
@@ -516,8 +630,24 @@ export default function MaintenanceMasterPage() {
                 onChange={setModelItems}
                 emptyMessage="項目がありません。テンプレートから読み込むか、項目を追加してください。"
               />
-              <div className="flex flex-wrap gap-2 pt-4">
-                <Button type="button" onClick={saveMaster} disabled={saving}>
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 space-y-2">
+                <p className="text-sm text-emerald-900 font-medium">初回の点検計画（月均等）</p>
+                <p className="text-xs text-emerald-800/90 leading-relaxed">
+                  マスタ作成直後は全機器が「未実施」に見えることがあります。対象機器（未点検・次回予定なし）に、1月〜12月へ均等に次回点検予定日を設定します。2回目以降は点検記録に従い自動更新されます。
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="bg-white border-emerald-200 text-emerald-900 hover:bg-emerald-50"
+                  disabled={planningInitial || saving || !masterId}
+                  onClick={() => void handleInitialPlanClick()}
+                >
+                  {planningInitial && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  初期計画を組む（月均等）
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button type="button" onClick={saveMaster} disabled={saving || planningInitial}>
                   {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   型式マスタを保存
                 </Button>

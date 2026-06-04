@@ -84,7 +84,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [inspectionStale, setInspectionStale] = useState<
     {
-      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>
+      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model' | 'next_maintenance_due'>
       lastInspection: string | null
       intervalMonths: number
       dueDate: string | null
@@ -95,7 +95,7 @@ export default function DashboardPage() {
     const [{ data: devices }, { data: records }, { data: mastersRaw }] = await Promise.all([
       supabase
         .from('devices')
-        .select('id, name, barcode, manufacturer, model')
+        .select('id, name, barcode, manufacturer, model, next_maintenance_due')
         .eq('status', 'active'),
       supabase
         .from('maintenance_records')
@@ -120,21 +120,27 @@ export default function DashboardPage() {
 
     const today = startOfDay(new Date())
     const stale: {
-      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>
+      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model' | 'next_maintenance_due'>
       lastInspection: string | null
       intervalMonths: number
       dueDate: string | null
     }[] = []
-    for (const dev of (devices ?? []) as Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model'>[]) {
+    for (const dev of (devices ?? []) as Pick<
+      Device,
+      'id' | 'name' | 'barcode' | 'manufacturer' | 'model' | 'next_maintenance_due'
+    >[]) {
       if (!deviceHasInspectionMaster(masters, dev)) continue
       const last = latestByDevice.get(dev.id) ?? null
       const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
-      if (!isInspectionStale(last, intervalMonths, today)) continue
+      if (!isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)) continue
+      const dueDate =
+        dev.next_maintenance_due?.slice(0, 10) ??
+        inspectionDueDate(last, intervalMonths)
       stale.push({
         device: dev,
         lastInspection: last,
         intervalMonths,
-        dueDate: inspectionDueDate(last, intervalMonths),
+        dueDate,
       })
     }
 
@@ -300,7 +306,16 @@ export default function DashboardPage() {
                     <p className="text-xs text-amber-900 font-medium">
                       点検期間: {intervalMonthsLabel(intervalMonths)}
                       {lastInspection === null ? (
-                        <> · 定期点検の記録がありません</>
+                        dueDate ? (
+                          <>
+                            {' '}
+                            · 次回予定:{' '}
+                            {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                            （未点検・予定あり）
+                          </>
+                        ) : (
+                          <> · 定期点検の記録がありません</>
+                        )
                       ) : (
                         <>
                           {' '}

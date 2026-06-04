@@ -77,14 +77,23 @@ export function inspectionDueDate(
   return format(addMonths(last, normalizeIntervalMonths(intervalMonths)), 'yyyy-MM-dd')
 }
 
-/** 点検期限を過ぎている、または一度も点検していない */
+/** 点検期限を過ぎている、または計画未設定 */
 export function isInspectionStale(
   lastCompletedDate: string | null | undefined,
   intervalMonths: number,
+  nextMaintenanceDue?: string | null,
   today = new Date(),
 ): boolean {
-  if (!lastCompletedDate) return true
-  const due = parseYmd(inspectionDueDate(lastCompletedDate, intervalMonths))
+  const todayStart = startOfDay(today)
+  const fromDue = parseYmd(nextMaintenanceDue ?? null)
+
+  if (!lastCompletedDate) {
+    if (fromDue && fromDue > todayStart) return false
+    return true
+  }
+
+  const due =
+    fromDue ?? parseYmd(inspectionDueDate(lastCompletedDate, intervalMonths))
   if (!due) return true
-  return startOfDay(today) >= due
+  return todayStart >= due
 }
