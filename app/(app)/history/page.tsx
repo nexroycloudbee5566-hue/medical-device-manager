@@ -32,10 +32,13 @@ import {
   CheckCircle,
   Loader2,
   Trash2,
+  Download,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { summarizeMaintenanceChecklistRaw, describeMaintenanceChecklistLines } from '@/lib/maintenance-master'
+import { downloadCsv, csvFilename } from '@/lib/csv-export'
+import { buildRequestsHistoryCsv, buildMaintenanceHistoryCsv } from '@/lib/export-csv-data'
 
 export default function HistoryPage() {
   const supabase = createClient()
@@ -132,6 +135,25 @@ export default function HistoryPage() {
     return true
   })
 
+  function exportCsv() {
+    if (activeTab === 'requests') {
+      if (filteredRequests.length === 0) {
+        alert('エクスポートする依頼がありません。')
+        return
+      }
+      downloadCsv(csvFilename('依頼履歴'), buildRequestsHistoryCsv(filteredRequests))
+    } else {
+      if (filteredMaintenance.length === 0) {
+        alert('エクスポートする点検記録がありません。')
+        return
+      }
+      downloadCsv(csvFilename('点検履歴'), buildMaintenanceHistoryCsv(filteredMaintenance))
+    }
+  }
+
+  const exportCount =
+    activeTab === 'requests' ? filteredRequests.length : filteredMaintenance.length
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -139,9 +161,20 @@ export default function HistoryPage() {
           <h1 className="text-2xl font-bold text-slate-800">履歴管理</h1>
           <p className="text-slate-500 text-sm mt-0.5">完了済み依頼・点検履歴の検索・閲覧・削除</p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchAll}>
-          <RefreshCw className="h-4 w-4 mr-1.5" />更新
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || exportCount === 0}
+            onClick={exportCsv}
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            CSV出力
+          </Button>
+          <Button variant="outline" size="sm" onClick={fetchAll}>
+            <RefreshCw className="h-4 w-4 mr-1.5" />更新
+          </Button>
+        </div>
       </div>
 
       {/* Summary */}

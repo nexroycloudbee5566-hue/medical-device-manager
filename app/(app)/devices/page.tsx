@@ -44,8 +44,11 @@ import {
   ArrowDown,
   ArrowUpDown,
   X,
+  Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { downloadCsv, csvFilename } from '@/lib/csv-export'
+import { buildDevicesCsv } from '@/lib/export-csv-data'
 import Link from 'next/link'
 import {
   workbookFromArrayBuffer,
@@ -364,6 +367,14 @@ export default function DevicesPage() {
     setEditDevice(device)
   }
 
+  function exportCsv() {
+    if (filtered.length === 0) {
+      alert('エクスポートするデータがありません。')
+      return
+    }
+    downloadCsv(csvFilename('機器台帳'), buildDevicesCsv(filtered))
+  }
+
   const dialogOpen = newDeviceOpen || !!editDevice
 
   return (
@@ -393,6 +404,15 @@ export default function DevicesPage() {
               <Upload className="h-4 w-4 mr-1.5" />
             )}
             Excel取込
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || filtered.length === 0}
+            onClick={exportCsv}
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            CSV出力
           </Button>
           <Button variant="outline" size="sm" onClick={fetchDevices}>
             <RefreshCw className="h-4 w-4 mr-1.5" />
