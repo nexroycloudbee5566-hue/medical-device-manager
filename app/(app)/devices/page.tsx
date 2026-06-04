@@ -151,7 +151,13 @@ export default function DevicesPage() {
         alert('取り込める行がありません。ME No. と機種名が入った行があるか確認してください。')
         return
       }
-      const payloads = rows.map((r) => excelImportRowToDeviceInsert(r))
+      // Excel内に同一 ME No. が複数行ある場合、後行で上書き（重複を除去）
+      const deduped = new Map<string, ReturnType<typeof excelImportRowToDeviceInsert>>()
+      for (const r of rows) {
+        deduped.set(r.barcode, excelImportRowToDeviceInsert(r))
+      }
+      const payloads = [...deduped.values()]
+      const dupCount = rows.length - payloads.length
       const chunkSize = 40
       for (let i = 0; i < payloads.length; i += chunkSize) {
         const chunk = payloads.slice(i, i + chunkSize)
@@ -162,7 +168,8 @@ export default function DevicesPage() {
           return
         }
       }
-      alert(`Excelから ${rows.length} 件を取り込みました（ME No. が同一の行は更新されます）。`)
+      const dupMsg = dupCount > 0 ? `（同一 ME No. の重複 ${dupCount} 行は最後の行で上書き）` : ''
+      alert(`Excelから ${payloads.length} 件を取り込みました。${dupMsg}`)
       fetchDevices()
     } catch (err) {
       console.error(err)
