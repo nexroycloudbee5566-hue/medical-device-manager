@@ -40,7 +40,7 @@ create table if not exists devices (
   location text,
   department text,
   purchase_date date,
-  status text not null default 'active' check (status in ('active', 'inactive', 'repair')),
+  status text not null default 'active' check (status in ('active', 'moved', 'disposed', 'unknown', 'repair')),
   next_maintenance_due date,
   notes text,
   equipment_category text,

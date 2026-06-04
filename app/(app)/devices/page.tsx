@@ -149,7 +149,13 @@ export default function DevicesPage() {
   const [saving, setSaving] = useState(false)
 
   const fetchDevices = useCallback(async () => {
-    const { data } = await supabase.from('devices').select('*').order('name')
+    const { data, error } = await supabase.from('devices').select('*').order('barcode')
+    if (error) {
+      console.error('[機器台帳] 取得エラー:', error.message)
+      alert(`機器一覧の取得に失敗しました: ${error.message}`)
+      setLoading(false)
+      return
+    }
     setDevices((data as Device[]) ?? [])
     setLoading(false)
   }, [supabase])
@@ -325,36 +331,70 @@ export default function DevicesPage() {
   }
 
   async function handleSave() {
-    setSaving(true)
-    const payload = {
-      name: form.name,
-      barcode: form.barcode || null,
-      model: form.model || null,
-      manufacturer: form.manufacturer || null,
-      serial_number: form.serial_number || null,
-      manufacture_year_month: form.manufacture_year_month || null,
-      location: form.location || null,
-      equipment_category: form.equipment_category || null,
-      specific_maintenance: form.specific_maintenance || null,
-      management_category: form.management_category || null,
-      dealer: form.dealer || null,
-      purchase_date: form.purchase_date || null,
-      status: form.status,
-      notes: form.notes || null,
-      hospital_id: null,
-      updated_at: new Date().toISOString(),
+    const name = form.name.trim()
+    if (!name) {
+      alert('機種名を入力してください。')
+      return
     }
 
-    if (editDevice) {
-      await supabase.from('devices').update(payload).eq('id', editDevice.id)
-    } else {
-      await supabase.from('devices').insert(payload)
+    setSaving(true)
+    try {
+      const payload = {
+        name,
+        barcode: form.barcode.trim() || null,
+        model: form.model.trim() || null,
+        manufacturer: form.manufacturer.trim() || null,
+        serial_number: form.serial_number.trim() || null,
+        manufacture_year_month: form.manufacture_year_month.trim() || null,
+        location: form.location.trim() || null,
+        equipment_category: form.equipment_category.trim() || null,
+        specific_maintenance: form.specific_maintenance.trim() || null,
+        management_category: form.management_category.trim() || null,
+        dealer: form.dealer.trim() || null,
+        purchase_date: form.purchase_date.trim() || null,
+        status: form.status,
+        notes: form.notes.trim() || null,
+        updated_at: new Date().toISOString(),
+      }
+
+      if (editDevice) {
+        const { data, error } = await supabase
+          .from('devices')
+          .update(payload)
+          .eq('id', editDevice.id)
+          .select('id')
+          .maybeSingle()
+
+        if (error) {
+          console.error('[機器台帳] 更新エラー:', error)
+          alert(
+            `保存に失敗しました: ${error.message}\n\nステータスが「利用中/移動/破棄/不明/修理中」に対応していない場合は、Supabaseで update_status_check_constraint.sql を実行してください。`,
+          )
+          return
+        }
+        if (!data) {
+          alert('保存に失敗しました（対象の機器が見つかりません）。一覧を更新してから再度お試しください。')
+          return
+        }
+      } else {
+        const { error } = await supabase.from('devices').insert({
+          ...payload,
+          hospital_id: null,
+        })
+        if (error) {
+          console.error('[機器台帳] 登録エラー:', error)
+          alert(`登録に失敗しました: ${error.message}`)
+          return
+        }
+      }
+
+      await fetchDevices()
+      setEditDevice(null)
+      setNewDeviceOpen(false)
+      setForm(emptyDevice)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
-    setEditDevice(null)
-    setNewDeviceOpen(false)
-    setForm(emptyDevice)
-    fetchDevices()
   }
 
   function openNew() {
@@ -581,8 +621,8 @@ export default function DevicesPage() {
                     ) : '-'}
                   </TableCell>
                   <TableCell>
-                    <Badge className={STATUS_BADGE[device.status]}>
-                      {DEVICE_STATUS_LABEL[device.status]}
+                    <Badge className={STATUS_BADGE[normalizeFormStatus(device.status)]}>
+                      {DEVICE_STATUS_LABEL[normalizeFormStatus(device.status)]}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -683,6 +723,13 @@ function SortableHead({
   )
 }
 
+function normalizeFormStatus(status: string): DeviceStatus {
+  if (status === 'inactive') return 'disposed'
+  const allowed: DeviceStatus[] = ['active', 'moved', 'disposed', 'unknown', 'repair']
+  if (allowed.includes(status as DeviceStatus)) return status as DeviceStatus
+  return 'unknown'
+}
+
 function deviceToForm(device: Device): typeof emptyDevice {
   return {
     name: device.name,
@@ -696,8 +743,8 @@ function deviceToForm(device: Device): typeof emptyDevice {
     specific_maintenance: device.specific_maintenance ?? '',
     management_category: device.management_category ?? '',
     dealer: device.dealer ?? '',
-    purchase_date: device.purchase_date ?? '',
-    status: device.status,
+    purchase_date: device.purchase_date?.slice(0, 10) ?? '',
+    status: normalizeFormStatus(device.status),
     notes: device.notes ?? '',
   }
 }
