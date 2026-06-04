@@ -126,6 +126,21 @@ export function serializeChecklistTemplate(items: MaintenanceChecklistItem[]): u
   })
 }
 
+/** テンプレート項目を型式マスタ用にコピー（各項目に新しい key を付与） */
+export function cloneChecklistItemsFromTemplate(
+  source: MaintenanceChecklistItem[],
+): MaintenanceChecklistItem[] {
+  return source.map((item) => {
+    const next: MaintenanceChecklistItem = {
+      key: generateChecklistItemKey(),
+      label: item.label,
+      kind: item.kind,
+    }
+    if (item.kind === 'number' && item.unit) next.unit = item.unit
+    return next
+  })
+}
+
 export function defaultResultForItem(item: MaintenanceChecklistItem): ChecklistResultEntry {
   switch (item.kind) {
     case 'checkbox':

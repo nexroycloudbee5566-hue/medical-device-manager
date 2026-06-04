@@ -161,6 +161,15 @@ export interface MaintenanceModelMaster {
   updated_at: string
 }
 
+/** 一括テンプレート（マスタ名＋点検項目。型式マスタへ適用） */
+export interface MaintenanceChecklistTemplate {
+  id: string
+  name: string
+  checklist_items: MaintenanceChecklistItem[]
+  created_at: string
+  updated_at: string
+}
+
 export interface MaintenanceRecord {
   id: string
   device_id: string
