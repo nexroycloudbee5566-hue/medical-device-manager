@@ -158,18 +158,46 @@ export default function DevicesPage() {
       }
       const payloads = [...deduped.values()]
       const dupCount = rows.length - payloads.length
+
+      // 既存の barcode 一覧を取得して UPDATE / INSERT を分ける
+      const { data: existingRaw } = await supabase
+        .from('devices')
+        .select('id, barcode')
+      const existingMap = new Map<string, string>(
+        (existingRaw ?? [])
+          .filter((d) => d.barcode)
+          .map((d) => [d.barcode as string, d.id as string])
+      )
+
+      const toInsert = payloads.filter((p) => !existingMap.has(p.barcode as string))
+      const toUpdate = payloads.filter((p) => existingMap.has(p.barcode as string))
+
       const chunkSize = 40
-      for (let i = 0; i < payloads.length; i += chunkSize) {
-        const chunk = payloads.slice(i, i + chunkSize)
-        const { error } = await supabase.from('devices').upsert(chunk, { onConflict: 'barcode' })
+
+      // INSERT
+      for (let i = 0; i < toInsert.length; i += chunkSize) {
+        const chunk = toInsert.slice(i, i + chunkSize)
+        const { error } = await supabase.from('devices').insert(chunk)
         if (error) {
           console.error(error)
-          alert(`インポートに失敗しました: ${error.message}`)
+          alert(`インポートに失敗しました（新規登録）: ${error.message}`)
           return
         }
       }
-      const dupMsg = dupCount > 0 ? `（同一 ME No. の重複 ${dupCount} 行は最後の行で上書き）` : ''
-      alert(`Excelから ${payloads.length} 件を取り込みました。${dupMsg}`)
+
+      // UPDATE（barcode でマッチした既存行を1件ずつ更新）
+      for (const p of toUpdate) {
+        const id = existingMap.get(p.barcode as string)!
+        const { error } = await supabase.from('devices').update(p).eq('id', id)
+        if (error) {
+          console.error(error)
+          alert(`インポートに失敗しました（更新）: ${error.message}`)
+          return
+        }
+      }
+
+      const dupMsg = dupCount > 0 ? `\n（同一 ME No. の重複 ${dupCount} 行は除去済み）` : ''
+      alert(`Excelから ${payloads.length} 件を取り込みました。\n新規: ${toInsert.length} 件 / 更新: ${toUpdate.length} 件${dupMsg}`)
       fetchDevices()
     } catch (err) {
       console.error(err)
