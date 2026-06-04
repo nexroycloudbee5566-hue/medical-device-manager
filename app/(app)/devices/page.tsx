@@ -46,6 +46,7 @@ import {
   workbookFromArrayBuffer,
   parseDeviceRegistryWorkbook,
   excelImportRowToDeviceInsert,
+  detectDeviceRegistrySheet,
 } from '@/lib/excel-device-import'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
@@ -141,9 +142,13 @@ export default function DevicesPage() {
     try {
       const buf = await file.arrayBuffer()
       const wb = workbookFromArrayBuffer(buf)
+      if (!detectDeviceRegistrySheet(wb)) {
+        alert('榊原温泉病院 医療機器台帳の形式ではありません。「シート1」に ME No. と機種名があるか確認してください。')
+        return
+      }
       const rows = parseDeviceRegistryWorkbook(wb)
       if (rows.length === 0) {
-        alert('取り込める行がありません。「シート1」に新No.・機種名があるか確認してください。')
+        alert('取り込める行がありません。ME No. と機種名が入った行があるか確認してください。')
         return
       }
       const payloads = rows.map((r) => excelImportRowToDeviceInsert(r))
@@ -157,7 +162,7 @@ export default function DevicesPage() {
           return
         }
       }
-      alert(`Excelから ${rows.length} 件を取り込みました（新No.が同一の行は更新されます）。`)
+      alert(`Excelから ${rows.length} 件を取り込みました（ME No. が同一の行は更新されます）。`)
       fetchDevices()
     } catch (err) {
       console.error(err)
@@ -263,13 +268,13 @@ export default function DevicesPage() {
           <div className="flex items-center gap-3">
             <Barcode className="h-5 w-5 text-blue-600 shrink-0" />
             <div className="flex-1">
-              <Label className="text-blue-700 font-medium text-sm">新No.・バーコード検索</Label>
+              <Label className="text-blue-700 font-medium text-sm">ME No.・バーコード検索</Label>
               <Input
                 ref={barcodeRef}
                 value={barcodeInput}
                 onChange={(e) => setBarcodeInput(e.target.value)}
                 onKeyDown={handleBarcodeSearch}
-                placeholder="新No.を入力またはバーコードをスキャンしEnter"
+                placeholder="ME No.を入力またはバーコードをスキャンしEnter"
                 className="mt-1 bg-white border-blue-200"
                 autoFocus
               />
@@ -285,7 +290,7 @@ export default function DevicesPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="機種名・新No.・メーカー・設置場所などで検索"
+            placeholder="機種名・ME No.・メーカー・設置場所などで検索"
             className="pl-9 bg-white"
           />
         </div>
@@ -317,7 +322,7 @@ export default function DevicesPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50">
-                <TableHead className="w-28">新No.</TableHead>
+                <TableHead className="w-28">ME No.</TableHead>
                 <TableHead>機種名</TableHead>
                 <TableHead>機器区分</TableHead>
                 <TableHead>メーカー / 型式</TableHead>
@@ -453,10 +458,10 @@ function DeviceForm({
   return (
     <div className="grid grid-cols-2 gap-4 py-2">
       <p className="col-span-2 text-xs text-slate-500">
-        項目名は機器台帳Excel（温泉HPフォーマットのシート1）と対応しています。
+        項目名は「榊原温泉病院　医療機器台帳　完成版」（シート1）と対応しています。
       </p>
       <div className="space-y-1.5">
-        <Label>新No.</Label>
+        <Label>ME No.</Label>
         <Input value={form.barcode} onChange={(e) => onChange('barcode', e.target.value)} placeholder="ME-SP001" />
       </div>
       <div className="space-y-1.5">
@@ -526,8 +531,8 @@ function DeviceForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="active">稼働中（Excel: 利用中 相当）</SelectItem>
-            <SelectItem value="inactive">休止・廃棄（Excel: 廃棄 相当）</SelectItem>
+            <SelectItem value="active">稼働中（Excel: 利用中）</SelectItem>
+            <SelectItem value="inactive">休止・廃棄・移動（Excel: 廃棄 / 移動）</SelectItem>
             <SelectItem value="repair">修理中</SelectItem>
           </SelectContent>
         </Select>

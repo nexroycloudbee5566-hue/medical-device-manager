@@ -14,8 +14,10 @@ function hk(s: string): string {
   return normalizeDeviceExcelHeader(s)
 }
 
-/** Excelの列ラベル → 内部フィールド名（温泉HP機器台帳フォーマット・シート1） */
+/** Excelの列ラベル → 内部フィールド名（榊原温泉病院 医療機器台帳 完成版・シート1） */
 const FIELD_BY_HEADER_KEY: Record<string, keyof ExcelRawFields> = {
+  [hk('MENo.')]: 'barcode',
+  [hk('ME No.')]: 'barcode',
   [hk('新No.')]: 'barcode',
   [hk('設置場所')]: 'location',
   [hk('機器区分')]: 'equipment_category',
@@ -76,22 +78,31 @@ export type ExcelDeviceImportRow = {
   ownership_type: string | null
   inventory_confirmation: string | null
   status: DeviceStatus
+  /** Excel のステータス原文（利用中・廃棄・移動など） */
+  excelStatusLabel: string | null
 }
 
+/** 榊原温泉病院台帳のステータス → アプリの device.status */
 export function mapExcelEquipmentStatus(v: unknown): DeviceStatus {
   const s = String(v ?? '').trim()
   if (s === '修理中') return 'repair'
-  if (s === '廃棄') return 'inactive'
+  if (s === '廃棄' || s === '移動') return 'inactive'
+  if (s === '利用中') return 'active'
   return 'active'
 }
 
-/** Excel日付シリアルまたは ISO 文字列 → yyyy-MM-dd */
+/** Excel日付シリアルまたは ISO / 年月文字列 → yyyy-MM-dd（購入年月用） */
 export function excelCellToIsoDate(v: unknown): string | null {
   if (v === '' || v == null) return null
   if (typeof v === 'string') {
     const t = v.trim()
     if (!t) return null
     if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10)
+    const ym = t.match(/^(\d{4})[\/年.-](\d{1,2})/)
+    if (ym) {
+      const month = ym[2].padStart(2, '0')
+      return `${ym[1]}-${month}-01`
+    }
     const n = Number(t)
     if (!Number.isFinite(n)) return null
     return excelSerialToIsoDateNumber(n)
@@ -101,6 +112,7 @@ export function excelCellToIsoDate(v: unknown): string | null {
 }
 
 function excelSerialToIsoDateNumber(serial: number): string | null {
+  if (serial < 1000) return null
   const utc_days = Math.floor(serial - 25569)
   const utc_ms = utc_days * 86400 * 1000
   const d = new Date(utc_ms)
@@ -110,6 +122,16 @@ function excelSerialToIsoDateNumber(serial: number): string | null {
 
 function str(v: unknown): string | null {
   if (v === '' || v == null) return null
+  const s = String(v).trim()
+  return s || null
+}
+
+function formatManufactureYearMonth(v: unknown): string | null {
+  if (v === '' || v == null) return null
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    const iso = excelSerialToIsoDateNumber(v)
+    if (iso) return iso.slice(0, 7).replace('-', '/')
+  }
   const s = String(v).trim()
   return s || null
 }
@@ -129,6 +151,8 @@ export function parseExcelRowToDevice(row: Record<string, unknown>): ExcelDevice
   const name = str(f.name)
   if (!barcode || !name) return null
 
+  const excelStatusLabel = str(f.excel_status)
+
   return {
     barcode,
     name,
@@ -141,7 +165,7 @@ export function parseExcelRowToDevice(row: Record<string, unknown>): ExcelDevice
       f.serial_number === '' || f.serial_number == null
         ? null
         : String(f.serial_number).trim(),
-    manufacture_year_month: str(f.manufacture_year_month),
+    manufacture_year_month: formatManufactureYearMonth(f.manufacture_year_month),
     purchase_date: excelCellToIsoDate(f.purchase_date_raw),
     manufacturer: str(f.manufacturer),
     dealer: str(f.dealer),
@@ -150,6 +174,7 @@ export function parseExcelRowToDevice(row: Record<string, unknown>): ExcelDevice
     ownership_type: str(f.ownership_type),
     inventory_confirmation: str(f.inventory_confirmation),
     status: mapExcelEquipmentStatus(f.excel_status),
+    excelStatusLabel,
   }
 }
 
@@ -171,7 +196,7 @@ export function workbookFromArrayBuffer(buf: ArrayBuffer): XLSX.WorkBook {
   return XLSX.read(buf, { type: 'array' })
 }
 
-/** Supabase upsert 用の行（Excelと同一項目） */
+/** Supabase upsert 用の行 */
 export function excelImportRowToDeviceInsert(r: ExcelDeviceImportRow): Record<string, unknown> {
   return {
     barcode: r.barcode,
@@ -193,4 +218,17 @@ export function excelImportRowToDeviceInsert(r: ExcelDeviceImportRow): Record<st
     status: r.status,
     updated_at: new Date().toISOString(),
   }
+}
+
+/** 台帳 Excel の必須列が含まれるか（取込前の簡易チェック） */
+export function detectDeviceRegistrySheet(wb: XLSX.WorkBook): boolean {
+  const sheetName = wb.SheetNames.includes('シート1') ? 'シート1' : wb.SheetNames[0]
+  const sheet = wb.Sheets[sheetName]
+  const matrix = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' })
+  const headerRow = matrix[0]
+  if (!headerRow?.length) return false
+  const headers = headerRow.map((c) => normalizeDeviceExcelHeader(String(c)))
+  const hasId = headers.some((h) => h === hk('MENo.') || h === hk('ME No.') || h === hk('新No.'))
+  const hasName = headers.includes(hk('機種名'))
+  return hasId && hasName
 }
