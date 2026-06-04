@@ -14,16 +14,33 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
-import { RefreshCw, Wrench, ShoppingCart, Hammer, ChevronRight, CalendarClock } from 'lucide-react'
+import { RefreshCw, Wrench, ShoppingCart, Hammer, ChevronRight, CalendarClock, CalendarDays } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { differenceInCalendarDays, parse, startOfDay } from 'date-fns'
-import { deviceHasInspectionMaster, mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
+import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
+import { ja } from 'date-fns/locale'
+import { mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
+import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
 import {
+  derivePlannedDate,
   getIntervalMonthsForDevice,
   isInspectionStale,
   inspectionDueDate,
   intervalMonthsLabel,
+  isPlannedInMonth,
+  completedInspectionInMonth,
 } from '@/lib/inspection-interval'
+
+type InspectionDeviceRow = Pick<
+  Device,
+  'id' | 'name' | 'barcode' | 'manufacturer' | 'model' | 'next_maintenance_due' | 'location'
+>
+
+type InspectionListEntry = {
+  device: InspectionDeviceRow
+  lastInspection: string | null
+  intervalMonths: number
+  plannedDate: string | null
+}
 
 function requestProgressPct(type: RequestType, status: string): number {
   const statusList = getStatusList(type)
@@ -82,21 +99,16 @@ export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), [])
   const [requests, setRequests] = useState<Request[]>([])
   const [loading, setLoading] = useState(true)
-  const [inspectionStale, setInspectionStale] = useState<
-    {
-      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model' | 'next_maintenance_due'>
-      lastInspection: string | null
-      intervalMonths: number
-      dueDate: string | null
-    }[]
-  >([])
+  const [inspectionStale, setInspectionStale] = useState<InspectionListEntry[]>([])
+  const [inspectionDueThisMonth, setInspectionDueThisMonth] = useState<InspectionListEntry[]>([])
 
-  const fetchInspectionStale = useCallback(async () => {
+  const fetchInspectionLists = useCallback(async () => {
     const [{ data: devices }, { data: records }, { data: mastersRaw }] = await Promise.all([
       supabase
         .from('devices')
-        .select('id, name, barcode, manufacturer, model, next_maintenance_due')
-        .eq('status', 'active'),
+        .select('id, name, barcode, manufacturer, model, next_maintenance_due, location, status')
+        .not('status', 'eq', 'disposed')
+        .not('status', 'eq', 'inactive'),
       supabase
         .from('maintenance_records')
         .select('device_id, completed_date')
@@ -119,37 +131,54 @@ export default function DashboardPage() {
     }
 
     const today = startOfDay(new Date())
-    const stale: {
-      device: Pick<Device, 'id' | 'name' | 'barcode' | 'manufacturer' | 'model' | 'next_maintenance_due'>
-      lastInspection: string | null
-      intervalMonths: number
-      dueDate: string | null
-    }[] = []
-    for (const dev of (devices ?? []) as Pick<
-      Device,
-      'id' | 'name' | 'barcode' | 'manufacturer' | 'model' | 'next_maintenance_due'
-    >[]) {
-      if (!deviceHasInspectionMaster(masters, dev)) continue
+    const stale: InspectionListEntry[] = []
+    const dueMonth: InspectionListEntry[] = []
+
+    for (const dev of (devices ?? []) as (InspectionDeviceRow & { status: string })[]) {
+      if (!deviceEligibleForAnnualPlan(masters, dev)) continue
+
       const last = latestByDevice.get(dev.id) ?? null
       const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
-      if (!isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)) continue
-      const dueDate =
-        dev.next_maintenance_due?.slice(0, 10) ??
-        inspectionDueDate(last, intervalMonths)
-      stale.push({
+      const plannedDate = derivePlannedDate(
+        dev.next_maintenance_due,
+        last,
+        intervalMonths,
+      )
+
+      const entry: InspectionListEntry = {
         device: dev,
         lastInspection: last,
         intervalMonths,
-        dueDate,
-      })
+        plannedDate,
+      }
+
+      if (
+        isPlannedInMonth(plannedDate, today) &&
+        !completedInspectionInMonth(last, today)
+      ) {
+        dueMonth.push(entry)
+      }
+
+      if (isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)) {
+        const dueDate =
+          dev.next_maintenance_due?.slice(0, 10) ?? inspectionDueDate(last, intervalMonths)
+        stale.push({ ...entry, plannedDate: dueDate })
+      }
     }
 
+    const byPlanned = (a: InspectionListEntry, b: InspectionListEntry) =>
+      (a.plannedDate ?? '9999-12-31').localeCompare(b.plannedDate ?? '9999-12-31')
+
+    dueMonth.sort(byPlanned)
     stale.sort((a, b) => {
-      if (a.lastInspection === null && b.lastInspection === null) return a.device.name.localeCompare(b.device.name, 'ja')
+      if (a.lastInspection === null && b.lastInspection === null)
+        return a.device.name.localeCompare(b.device.name, 'ja')
       if (a.lastInspection === null) return -1
       if (b.lastInspection === null) return 1
       return a.lastInspection.localeCompare(b.lastInspection)
     })
+
+    setInspectionDueThisMonth(dueMonth)
     setInspectionStale(stale)
   }, [supabase])
 
@@ -162,8 +191,8 @@ export default function DashboardPage() {
       .neq('status', '完了')
     setRequests(((data ?? []) as unknown) as Request[])
     setLoading(false)
-    void fetchInspectionStale()
-  }, [supabase, fetchInspectionStale])
+    void fetchInspectionLists()
+  }, [supabase, fetchInspectionLists])
 
   useEffect(() => {
     fetchRequests()
@@ -173,24 +202,26 @@ export default function DashboardPage() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'maintenance_records' },
-        () => void fetchInspectionStale(),
+        () => void fetchInspectionLists(),
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'devices' },
-        () => void fetchInspectionStale(),
+        () => void fetchInspectionLists(),
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'maintenance_model_masters' },
-        () => void fetchInspectionStale(),
+        () => void fetchInspectionLists(),
       )
       .subscribe()
-    void fetchInspectionStale()
+    void fetchInspectionLists()
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchRequests, fetchInspectionStale, supabase])
+  }, [fetchRequests, fetchInspectionLists, supabase])
+
+  const currentMonthLabel = format(new Date(), 'yyyy年M月', { locale: ja })
 
   const repairList = useMemo(
     () => requests.filter((r) => r.type === 'repair'),
@@ -267,6 +298,89 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      <Card className="border-0 shadow-sm border-l-4 border-l-blue-500 bg-blue-50/35 overflow-hidden">
+        <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-blue-50/80 border-b border-blue-100">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base font-semibold text-blue-950 flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-blue-700 shrink-0" />
+              {currentMonthLabel}の定期点検
+            </CardTitle>
+            <p className="text-xs text-blue-900/75 font-normal leading-snug">
+              次回点検予定が今月の機器です（今月すでに点検済みの機器は除きます）。
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <Badge variant="outline" className="border-blue-300 text-blue-900 bg-white">
+              {loading ? '…' : `${inspectionDueThisMonth.length} 件`}
+            </Badge>
+            <Link
+              href="/maintenance/annual"
+              className="text-[10px] text-blue-700 underline"
+            >
+              年間計画へ
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent className="py-3 px-4">
+          {loading ? (
+            <p className="text-sm text-blue-900/70 py-2">読み込み中…</p>
+          ) : inspectionDueThisMonth.length === 0 ? (
+            <p className="text-sm text-blue-900/70 py-1">
+              今月予定の定期点検はありません。
+            </p>
+          ) : (
+            <ul className="max-h-72 overflow-y-auto divide-y divide-blue-100 text-sm">
+              {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => {
+                const planned = plannedDate
+                  ? parse(plannedDate, 'yyyy-MM-dd', new Date())
+                  : null
+                const isPast =
+                  planned && startOfDay(planned) < startOfDay(new Date())
+                return (
+                  <li
+                    key={dev.id}
+                    className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="font-medium text-slate-900 truncate">{dev.name}</p>
+                      <p className="text-xs text-slate-600">
+                        {dev.barcode ? (
+                          <span className="font-mono mr-2">{dev.barcode}</span>
+                        ) : (
+                          <span className="text-slate-400 mr-2">コードなし</span>
+                        )}
+                        {dev.location || [dev.manufacturer, dev.model].filter(Boolean).join(' / ') || null}
+                      </p>
+                      <p className="text-xs text-blue-900 font-medium">
+                        予定日:{' '}
+                        {plannedDate
+                          ? plannedDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')
+                          : '—'}
+                        {isPast && (
+                          <span className="text-amber-800 ml-1">（予定日を過ぎています）</span>
+                        )}
+                        {lastInspection && (
+                          <span className="text-slate-500 font-normal ml-1">
+                            · 前回:{' '}
+                            {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <Link
+                      href="/maintenance"
+                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-7 text-xs')}
+                    >
+                      点検へ
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="border-0 shadow-sm border-l-4 border-l-amber-500 bg-amber-50/35 overflow-hidden">
         <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-amber-50/80 border-b border-amber-100">
           <div className="min-w-0 space-y-1">
@@ -291,7 +405,7 @@ export default function DashboardPage() {
             </p>
           ) : (
             <ul className="max-h-72 overflow-y-auto divide-y divide-amber-100 text-sm">
-              {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, dueDate }) => (
+              {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, plannedDate: dueDate }) => (
                 <li key={dev.id} className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 space-y-0.5">
                     <p className="font-medium text-slate-900 truncate">{dev.name}</p>

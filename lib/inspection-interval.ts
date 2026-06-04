@@ -77,6 +77,29 @@ export function inspectionDueDate(
   return format(addMonths(last, normalizeIntervalMonths(intervalMonths)), 'yyyy-MM-dd')
 }
 
+function parseYmdLocal(s: string | null | undefined): Date | null {
+  if (!s) return null
+  const d = parse(s.slice(0, 10), 'yyyy-MM-dd', new Date())
+  return isValid(d) ? startOfDay(d) : null
+}
+
+/** 予定日が指定日と同じ年月か */
+export function isPlannedInMonth(plannedDate: string | null | undefined, ref: Date): boolean {
+  const d = parseYmdLocal(plannedDate)
+  if (!d) return false
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth()
+}
+
+/** その月に定期点検完了済みか */
+export function completedInspectionInMonth(
+  lastCompletedDate: string | null | undefined,
+  ref: Date,
+): boolean {
+  const d = parseYmdLocal(lastCompletedDate)
+  if (!d) return false
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth()
+}
+
 /** 点検期限を過ぎている、または計画未設定 */
 export function isInspectionStale(
   lastCompletedDate: string | null | undefined,
