@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Device, DEVICE_STATUS_LABEL, DeviceStatus } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -40,7 +40,12 @@ import {
   Cpu,
   RefreshCw,
   Upload,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  X,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import {
   workbookFromArrayBuffer,
@@ -57,6 +62,50 @@ const STATUS_BADGE: Record<DeviceStatus, string> = {
   disposed: 'bg-slate-100 text-slate-500 border-0',
   unknown: 'bg-yellow-100 text-yellow-700 border-0',
   repair: 'bg-orange-100 text-orange-700 border-0',
+}
+
+const STATUS_FILTER_OPTIONS: { value: DeviceStatus; label: string }[] = [
+  { value: 'active', label: '利用中' },
+  { value: 'moved', label: '移動' },
+  { value: 'disposed', label: '破棄' },
+  { value: 'unknown', label: '不明' },
+  { value: 'repair', label: '修理中' },
+]
+
+type SortKey =
+  | 'barcode'
+  | 'name'
+  | 'equipment_category'
+  | 'manufacturer'
+  | 'location'
+  | 'next_maintenance_due'
+  | 'status'
+
+function sortValue(d: Device, key: SortKey): string {
+  switch (key) {
+    case 'barcode':
+      return d.barcode ?? ''
+    case 'name':
+      return d.name
+    case 'equipment_category':
+      return d.equipment_category ?? ''
+    case 'manufacturer':
+      return [d.manufacturer, d.model].filter(Boolean).join(' ')
+    case 'location':
+      return d.location ?? ''
+    case 'next_maintenance_due':
+      return d.next_maintenance_due ?? ''
+    case 'status':
+      return d.status
+    default:
+      return ''
+  }
+}
+
+function uniqueSorted(values: (string | null | undefined)[]): string[] {
+  return [...new Set(values.map((v) => (v ?? '').trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, 'ja'),
+  )
 }
 
 const emptyDevice = {
@@ -86,6 +135,11 @@ export default function DevicesPage() {
   const [search, setSearch] = useState('')
   const [barcodeInput, setBarcodeInput] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [locationFilter, setLocationFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [managementFilter, setManagementFilter] = useState('all')
+  const [sortKey, setSortKey] = useState<SortKey>('barcode')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editDevice, setEditDevice] = useState<Device | null>(null)
   const [newDeviceOpen, setNewDeviceOpen] = useState(false)
   const [form, setForm] = useState(emptyDevice)
@@ -115,22 +169,84 @@ export default function DevicesPage() {
     setBarcodeInput('')
   }
 
-  const filtered = devices.filter((d) => {
-    const q = search.toLowerCase()
-    if (
-      q &&
-      !d.name.toLowerCase().includes(q) &&
-      !(d.barcode?.toLowerCase().includes(q)) &&
-      !(d.manufacturer?.toLowerCase().includes(q)) &&
-      !(d.model?.toLowerCase().includes(q)) &&
-      !(d.location?.toLowerCase().includes(q)) &&
-      !(d.equipment_category?.toLowerCase().includes(q)) &&
-      !(d.serial_number?.toLowerCase().includes(q))
-    )
-      return false
-    if (statusFilter !== 'all' && d.status !== statusFilter) return false
-    return true
-  })
+  const locationOptions = useMemo(
+    () => uniqueSorted(devices.map((d) => d.location)),
+    [devices],
+  )
+  const categoryOptions = useMemo(
+    () => uniqueSorted(devices.map((d) => d.equipment_category)),
+    [devices],
+  )
+  const managementOptions = useMemo(
+    () => uniqueSorted(devices.map((d) => d.management_category)),
+    [devices],
+  )
+
+  const hasActiveFilters =
+    search !== '' ||
+    statusFilter !== 'all' ||
+    locationFilter !== 'all' ||
+    categoryFilter !== 'all' ||
+    managementFilter !== 'all'
+
+  function clearFilters() {
+    setSearch('')
+    setStatusFilter('all')
+    setLocationFilter('all')
+    setCategoryFilter('all')
+    setManagementFilter('all')
+  }
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim()
+    const list = devices.filter((d) => {
+      if (
+        q &&
+        !d.name.toLowerCase().includes(q) &&
+        !(d.barcode?.toLowerCase().includes(q)) &&
+        !(d.manufacturer?.toLowerCase().includes(q)) &&
+        !(d.model?.toLowerCase().includes(q)) &&
+        !(d.location?.toLowerCase().includes(q)) &&
+        !(d.equipment_category?.toLowerCase().includes(q)) &&
+        !(d.management_category?.toLowerCase().includes(q)) &&
+        !(d.serial_number?.toLowerCase().includes(q)) &&
+        !(d.dealer?.toLowerCase().includes(q))
+      )
+        return false
+      if (statusFilter !== 'all' && d.status !== statusFilter) return false
+      if (locationFilter !== 'all' && (d.location ?? '') !== locationFilter) return false
+      if (categoryFilter !== 'all' && (d.equipment_category ?? '') !== categoryFilter)
+        return false
+      if (managementFilter !== 'all' && (d.management_category ?? '') !== managementFilter)
+        return false
+      return true
+    })
+
+    return [...list].sort((a, b) => {
+      const av = sortValue(a, sortKey)
+      const bv = sortValue(b, sortKey)
+      const cmp = av.localeCompare(bv, 'ja', { numeric: true })
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [
+    devices,
+    search,
+    statusFilter,
+    locationFilter,
+    categoryFilter,
+    managementFilter,
+    sortKey,
+    sortDir,
+  ])
 
   async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -310,28 +426,83 @@ export default function DevicesPage() {
         </CardContent>
       </Card>
 
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="機種名・ME No.・メーカー・設置場所などで検索"
-            className="pl-9 bg-white"
-          />
+      {/* Filters & sort */}
+      <div className="space-y-3">
+        <div className="flex gap-3 flex-wrap items-center">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="機種名・ME No.・メーカー・設置場所などで検索"
+              className="pl-9 bg-white"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? 'all')}>
+            <SelectTrigger className="w-36 bg-white">
+              <SelectValue placeholder="状態" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">すべての状態</SelectItem>
+              {STATUS_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={locationFilter} onValueChange={(v) => setLocationFilter(v ?? 'all')}>
+            <SelectTrigger className="w-40 bg-white">
+              <SelectValue placeholder="設置場所" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">すべての設置場所</SelectItem>
+              {locationOptions.map((loc) => (
+                <SelectItem key={loc} value={loc}>
+                  {loc}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v ?? 'all')}>
+            <SelectTrigger className="w-40 bg-white">
+              <SelectValue placeholder="機器区分" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">すべての機器区分</SelectItem>
+              {categoryOptions.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={managementFilter} onValueChange={(v) => setManagementFilter(v ?? 'all')}>
+            <SelectTrigger className="w-44 bg-white">
+              <SelectValue placeholder="管理区分" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">すべての管理区分</SelectItem>
+              {managementOptions.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-slate-500">
+              <X className="h-4 w-4 mr-1" />
+              絞り込み解除
+            </Button>
+          )}
         </div>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? 'all')}>
-          <SelectTrigger className="w-32 bg-white">
-            <SelectValue placeholder="状態" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">すべての状態</SelectItem>
-            <SelectItem value="active">稼働中</SelectItem>
-            <SelectItem value="inactive">休止中</SelectItem>
-            <SelectItem value="repair">修理中</SelectItem>
-          </SelectContent>
-        </Select>
+        <p className="text-sm text-slate-500">
+          {filtered.length} 件表示
+          {devices.length !== filtered.length && `（全 ${devices.length} 件）`}
+          <span className="text-slate-400 mx-2">·</span>
+          列見出しをクリックで並べ替え
+        </p>
       </div>
 
       {/* Table */}
@@ -349,13 +520,13 @@ export default function DevicesPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50">
-                <TableHead className="w-28">ME No.</TableHead>
-                <TableHead>機種名</TableHead>
-                <TableHead>機器区分</TableHead>
-                <TableHead>メーカー / 型式</TableHead>
-                <TableHead>設置場所</TableHead>
-                <TableHead>次回点検日</TableHead>
-                <TableHead className="w-20">状態</TableHead>
+                <SortableHead label="ME No." column="barcode" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="w-28" />
+                <SortableHead label="機種名" column="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHead label="機器区分" column="equipment_category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHead label="メーカー / 型式" column="manufacturer" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHead label="設置場所" column="location" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHead label="次回点検日" column="next_maintenance_due" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHead label="状態" column="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} className="w-24" />
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
@@ -373,7 +544,7 @@ export default function DevicesPage() {
                     {[device.manufacturer, device.model].filter(Boolean).join(' / ') || '-'}
                   </TableCell>
                   <TableCell className="text-sm text-slate-600">
-                    {[device.department, device.location].filter(Boolean).join(' ') || '-'}
+                    {device.location ?? '-'}
                   </TableCell>
                   <TableCell className="text-sm">
                     {device.next_maintenance_due ? (
@@ -448,6 +619,47 @@ export default function DevicesPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function SortableHead({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+  className,
+}: {
+  label: string
+  column: SortKey
+  sortKey: SortKey
+  sortDir: 'asc' | 'desc'
+  onSort: (key: SortKey) => void
+  className?: string
+}) {
+  const active = sortKey === column
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={cn(
+          'inline-flex items-center gap-1 font-medium hover:text-slate-900 transition-colors',
+          active ? 'text-slate-900' : 'text-slate-600',
+        )}
+      >
+        {label}
+        {active ? (
+          sortDir === 'asc' ? (
+            <ArrowUp className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5 shrink-0" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 shrink-0 opacity-40" />
+        )}
+      </button>
+    </TableHead>
   )
 }
 
