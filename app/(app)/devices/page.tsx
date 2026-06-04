@@ -64,18 +64,13 @@ const emptyDevice = {
   manufacturer: '',
   serial_number: '',
   manufacture_year_month: '',
-  department: '',
   location: '',
   equipment_category: '',
   specific_maintenance: '',
   management_category: '',
   dealer: '',
-  maintenance_contract: '',
-  ownership_type: '',
-  inventory_confirmation: '',
   purchase_date: '',
   status: 'active' as DeviceStatus,
-  next_maintenance_due: '',
   notes: '',
 }
 
@@ -217,18 +212,13 @@ export default function DevicesPage() {
       manufacturer: form.manufacturer || null,
       serial_number: form.serial_number || null,
       manufacture_year_month: form.manufacture_year_month || null,
-      department: form.department || null,
       location: form.location || null,
       equipment_category: form.equipment_category || null,
       specific_maintenance: form.specific_maintenance || null,
       management_category: form.management_category || null,
       dealer: form.dealer || null,
-      maintenance_contract: form.maintenance_contract || null,
-      ownership_type: form.ownership_type || null,
-      inventory_confirmation: form.inventory_confirmation || null,
       purchase_date: form.purchase_date || null,
       status: form.status,
-      next_maintenance_due: form.next_maintenance_due || null,
       notes: form.notes || null,
       hospital_id: null,
       updated_at: new Date().toISOString(),
@@ -467,18 +457,13 @@ function deviceToForm(device: Device): typeof emptyDevice {
     manufacturer: device.manufacturer ?? '',
     serial_number: device.serial_number ?? '',
     manufacture_year_month: device.manufacture_year_month ?? '',
-    department: device.department ?? '',
     location: device.location ?? '',
     equipment_category: device.equipment_category ?? '',
     specific_maintenance: device.specific_maintenance ?? '',
     management_category: device.management_category ?? '',
     dealer: device.dealer ?? '',
-    maintenance_contract: device.maintenance_contract ?? '',
-    ownership_type: device.ownership_type ?? '',
-    inventory_confirmation: device.inventory_confirmation ?? '',
     purchase_date: device.purchase_date ?? '',
     status: device.status,
-    next_maintenance_due: device.next_maintenance_due ?? '',
     notes: device.notes ?? '',
   }
 }
@@ -492,9 +477,6 @@ function DeviceForm({
 }) {
   return (
     <div className="grid grid-cols-2 gap-4 py-2">
-      <p className="col-span-2 text-xs text-slate-500">
-        項目名は「榊原温泉病院　医療機器台帳　完成版」（シート1）と対応しています。
-      </p>
       <div className="space-y-1.5">
         <Label>ME No.</Label>
         <Input value={form.barcode} onChange={(e) => onChange('barcode', e.target.value)} placeholder="ME-SP001" />
@@ -505,7 +487,7 @@ function DeviceForm({
       </div>
       <div className="space-y-1.5">
         <Label>機器区分</Label>
-        <Input value={form.equipment_category} onChange={(e) => onChange('equipment_category', e.target.value)} placeholder="シリンジP" />
+        <Input value={form.equipment_category} onChange={(e) => onChange('equipment_category', e.target.value)} placeholder="シリンジポンプ" />
       </div>
       <div className="space-y-1.5">
         <Label>特定保守</Label>
@@ -524,57 +506,37 @@ function DeviceForm({
         <Input value={form.model} onChange={(e) => onChange('model', e.target.value)} placeholder="TE-332S" />
       </div>
       <div className="space-y-1.5">
+        <Label>製造元メーカー</Label>
+        <Input value={form.manufacturer} onChange={(e) => onChange('manufacturer', e.target.value)} placeholder="TERUMO" />
+      </div>
+      <div className="space-y-1.5">
         <Label>製造番号</Label>
         <Input value={form.serial_number} onChange={(e) => onChange('serial_number', e.target.value)} placeholder="製造番号" />
       </div>
       <div className="space-y-1.5">
         <Label>製造年月</Label>
-        <Input value={form.manufacture_year_month} onChange={(e) => onChange('manufacture_year_month', e.target.value)} placeholder="2010/" />
+        <Input value={form.manufacture_year_month} onChange={(e) => onChange('manufacture_year_month', e.target.value)} placeholder="2010/01" />
       </div>
       <div className="space-y-1.5">
         <Label>購入年月</Label>
         <Input type="date" value={form.purchase_date} onChange={(e) => onChange('purchase_date', e.target.value)} />
       </div>
       <div className="space-y-1.5">
-        <Label>製造元メーカー</Label>
-        <Input value={form.manufacturer} onChange={(e) => onChange('manufacturer', e.target.value)} placeholder="TERUMO" />
-      </div>
-      <div className="space-y-1.5">
         <Label>販売ディーラー</Label>
         <Input value={form.dealer} onChange={(e) => onChange('dealer', e.target.value)} placeholder="スズケン" />
       </div>
-      <div className="space-y-1.5 col-span-2">
-        <Label>メンテナンス（契約）</Label>
-        <Input value={form.maintenance_contract} onChange={(e) => onChange('maintenance_contract', e.target.value)} />
-      </div>
-      <div className="space-y-1.5 col-span-2">
-        <Label>区別（自設・リース）</Label>
-        <Input value={form.ownership_type} onChange={(e) => onChange('ownership_type', e.target.value)} />
-      </div>
       <div className="space-y-1.5">
-        <Label>設置部署（院内管理用）</Label>
-        <Input value={form.department} onChange={(e) => onChange('department', e.target.value)} placeholder="循環器内科" />
-      </div>
-      <div className="space-y-1.5">
-        <Label>次回点検予定日</Label>
-        <Input type="date" value={form.next_maintenance_due} onChange={(e) => onChange('next_maintenance_due', e.target.value)} />
-      </div>
-      <div className="space-y-1.5">
-        <Label>ステータス（アプリ）</Label>
+        <Label>ステータス</Label>
         <Select value={form.status} onValueChange={(v) => onChange('status', v ?? 'active')}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="active">稼働中（Excel: 利用中）</SelectItem>
-            <SelectItem value="inactive">休止・廃棄・移動（Excel: 廃棄 / 移動）</SelectItem>
+            <SelectItem value="active">利用中</SelectItem>
+            <SelectItem value="inactive">廃棄 / 移動</SelectItem>
             <SelectItem value="repair">修理中</SelectItem>
           </SelectContent>
         </Select>
-      </div>
-      <div className="space-y-1.5">
-        <Label>棚卸確認</Label>
-        <Input value={form.inventory_confirmation} onChange={(e) => onChange('inventory_confirmation', e.target.value)} />
       </div>
       <div className="space-y-1.5 col-span-2">
         <Label>備考</Label>
