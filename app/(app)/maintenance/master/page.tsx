@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, ClipboardList, ArrowLeft, Layers, FileStack } from 'lucide-react'
+import { Loader2, ClipboardList, ArrowLeft, Layers, FileStack, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   normalizeModelKeyPart,
@@ -79,6 +79,7 @@ export default function MaintenanceMasterPage() {
   const [saving, setSaving] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [planningInitial, setPlanningInitial] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const [selectedKey, setSelectedKey] = useState('')
   const [manufacturer, setManufacturer] = useState('')
@@ -321,6 +322,38 @@ export default function MaintenanceMasterPage() {
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function deleteMaster() {
+    if (!masterId) return
+    const man = manufacturer.trim()
+    const mod = model.trim()
+    const ok = confirm(
+      `「${man} — ${mod}」のメンテナンスマスタを削除しますか？\n\n` +
+        '・ 年間計画・ダッシュボードの対象から外れます\n' +
+        '・ 既存の点検記録は残ります（マスタとの紐づけのみ解除）\n' +
+        '・ 機器台帳の次回点検予定は変更されません\n\n' +
+        'この操作は取り消せません。',
+    )
+    if (!ok) return
+
+    setDeleting(true)
+    try {
+      const { error } = await supabase.from('maintenance_model_masters').delete().eq('id', masterId)
+      if (error) {
+        alert(`削除に失敗しました: ${error.message}`)
+        return
+      }
+      setMasterId(null)
+      setModelItems([])
+      setMaintenanceMethod('')
+      setInspectionIntervalMonths(DEFAULT_INSPECTION_INTERVAL_MONTHS)
+      setApplyTemplateId('')
+      await loadAll()
+      alert('メンテナンスマスタを削除しました。')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -668,11 +701,31 @@ export default function MaintenanceMasterPage() {
                   初期計画を組む（月均等）
                 </Button>
               </div>
-              <div className="flex flex-wrap gap-2 pt-2">
-                <Button type="button" onClick={saveMaster} disabled={saving || planningInitial}>
+              <div className="flex flex-wrap gap-2 pt-2 items-center">
+                <Button
+                  type="button"
+                  onClick={saveMaster}
+                  disabled={saving || planningInitial || deleting}
+                >
                   {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   型式マスタを保存
                 </Button>
+                {masterId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="text-red-700 border-red-200 hover:bg-red-50"
+                    disabled={saving || planningInitial || deleting}
+                    onClick={() => void deleteMaster()}
+                  >
+                    {deleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 mr-2" />
+                    )}
+                    型式マスタを削除
+                  </Button>
+                )}
               </div>
             </div>
           </div>
