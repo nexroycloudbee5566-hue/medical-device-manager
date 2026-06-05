@@ -6,6 +6,7 @@ export const DEFAULT_INSPECTION_INTERVAL_MONTHS = 12
 
 /** 型式マスタで選べる点検期間（月） */
 export const INSPECTION_INTERVAL_OPTIONS: { months: number; label: string }[] = [
+  { months: 1, label: '1ヶ月（毎月）' },
   { months: 3, label: '3ヶ月（四半期）' },
   { months: 6, label: '6ヶ月（半期）' },
   { months: 12, label: '12ヶ月（1年）' },
