@@ -46,6 +46,7 @@ import {
   X,
   Download,
   Copy,
+  Printer,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { downloadCsv, csvFilename } from '@/lib/csv-export'
@@ -59,6 +60,10 @@ import {
 } from '@/lib/excel-device-import'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
+import {
+  MeLabelPrintDialog,
+  type MeLabelPrintTarget,
+} from '@/components/devices/me-label-print-dialog'
 
 const STATUS_BADGE: Record<DeviceStatus, string> = {
   active: 'bg-green-100 text-green-700 border-0',
@@ -151,6 +156,8 @@ export default function DevicesPage() {
   const [duplicateFrom, setDuplicateFrom] = useState<Device | null>(null)
   const [form, setForm] = useState(emptyDevice)
   const [saving, setSaving] = useState(false)
+  const [labelPrintOpen, setLabelPrintOpen] = useState(false)
+  const [labelPrintTargets, setLabelPrintTargets] = useState<MeLabelPrintTarget[]>([])
 
   const fetchDevices = useCallback(async () => {
     const { data, error } = await supabase.from('devices').select('*').order('barcode')
@@ -424,6 +431,19 @@ export default function DevicesPage() {
     setNewDeviceOpen(true)
   }
 
+  function openLabelPrint(devs: MeLabelPrintTarget[]) {
+    const withMe = devs.filter((d) => d.barcode?.trim())
+    if (withMe.length === 0) {
+      alert('ME No. が設定された機器がありません。')
+      return
+    }
+    if (withMe.length > 50 && !confirm(`${withMe.length} 件のラベルを印刷します。よろしいですか？`)) {
+      return
+    }
+    setLabelPrintTargets(withMe)
+    setLabelPrintOpen(true)
+  }
+
   function exportCsv() {
     if (filtered.length === 0) {
       alert('エクスポートするデータがありません。')
@@ -461,6 +481,16 @@ export default function DevicesPage() {
               <Upload className="h-4 w-4 mr-1.5" />
             )}
             Excel取込
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading || filtered.every((d) => !d.barcode?.trim())}
+            onClick={() => openLabelPrint(filtered)}
+            title="表示中の機器の ME No. ラベルを印刷"
+          >
+            <Printer className="h-4 w-4 mr-1.5" />
+            ラベル印刷
           </Button>
           <Button
             variant="outline"
@@ -662,6 +692,16 @@ export default function DevicesPage() {
                       >
                         <Copy className="h-4 w-4 text-slate-400" />
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openLabelPrint([device])}
+                        className="h-8 w-8 p-0"
+                        title="ME No. ラベル印刷"
+                        disabled={!device.barcode?.trim()}
+                      >
+                        <Printer className="h-4 w-4 text-slate-400" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -670,6 +710,12 @@ export default function DevicesPage() {
           </Table>
         </Card>
       )}
+
+      <MeLabelPrintDialog
+        open={labelPrintOpen}
+        onOpenChange={setLabelPrintOpen}
+        targets={labelPrintTargets}
+      />
 
       {/* Device form dialog */}
       <Dialog
@@ -704,6 +750,24 @@ export default function DevicesPage() {
               メンテナンスマスタ
             </Link>
             で登録してください（メーカー・型式ごと）。
+            P-touch ラベルは{' '}
+            <button
+              type="button"
+              className="text-blue-600 underline font-medium"
+              disabled={!form.barcode.trim()}
+              onClick={() =>
+                openLabelPrint([
+                  {
+                    barcode: form.barcode.trim(),
+                    name: form.name.trim() || '（未入力）',
+                    location: form.location.trim() || null,
+                  },
+                ])
+              }
+            >
+              ME No. から印刷
+            </button>
+            （要セットアップ: docs/ptouch-setup.md）。
           </p>
           <DialogFooter>
             <Button
