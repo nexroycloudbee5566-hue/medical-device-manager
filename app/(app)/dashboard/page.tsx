@@ -300,476 +300,316 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">ダッシュボード</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            進行中依頼を機器／依頼機器ごとに表示します
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={fetchRequests}>
-          <RefreshCw className="h-4 w-4 mr-1.5" />
-          更新
-        </Button>
-      </div>
+    <div className="h-full flex flex-col p-3 gap-3 overflow-hidden">
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="pt-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">進行中（合計）</p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{requests.length}</p>
-              </div>
-              <div className="p-3 bg-blue-50 rounded-xl">
-                <RefreshCw className="h-5 w-5 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-sm">
-          <CardContent className="pt-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">修理依頼（進行中）</p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{repairList.length}</p>
-              </div>
-              <div className="p-3 bg-orange-50 rounded-xl">
-                <Wrench className="h-5 w-5 text-orange-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-sm">
-          <CardContent className="pt-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">購入依頼（進行中）</p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{purchaseList.length}</p>
-              </div>
-              <div className="p-3 bg-green-50 rounded-xl">
-                <ShoppingCart className="h-5 w-5 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-0 shadow-sm border-l-4 border-l-teal-500 bg-teal-50/35 overflow-hidden">
-        <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-teal-50/80 border-b border-teal-100">
-          <button
-            type="button"
-            onClick={() => setDailyExpanded((v) => !v)}
-            className="min-w-0 flex-1 text-left rounded-md -m-1 p-1 hover:bg-teal-100/60 transition-colors"
-          >
-            <CardTitle className="text-base font-semibold text-teal-950 flex items-center gap-2">
-              <ClipboardCheck className="h-5 w-5 text-teal-700 shrink-0" />
-              日常点検（{todayLabel}）
-              <ChevronDown
-                className={cn(
-                  'h-4 w-4 text-teal-600 transition-transform ml-auto sm:ml-1',
-                  dailyExpanded && 'rotate-180',
-                )}
-              />
-            </CardTitle>
-            <p className="text-xs text-teal-900/75 font-normal leading-snug mt-1">
-              日常点検マスタ登録済みの稼働中機器です。クリックで本日の点検一覧を表示します。
-            </p>
-          </button>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <Badge variant="outline" className="border-teal-300 text-teal-900 bg-white">
-              {loading ? '…' : `未実施 ${dailyPendingCount} / 全 ${dailyInspections.length}`}
-            </Badge>
-            {dailyDoneCount > 0 && (
-              <span className="text-[10px] text-teal-700">完了 {dailyDoneCount} 件</span>
-            )}
-          </div>
-        </CardHeader>
-        {dailyExpanded && (
-          <CardContent className="py-3 px-4">
-            {loading ? (
-              <p className="text-sm text-teal-900/70 py-2">読み込み中…</p>
-            ) : dailyInspections.length === 0 ? (
-              <p className="text-sm text-teal-900/70 py-1">
-                本日の日常点検対象がありません。メンテナンスマスタの「日常点検」タブで登録してください。
-              </p>
-            ) : (
-              <ul className="max-h-96 overflow-y-auto divide-y divide-teal-100 text-sm">
-                {dailyInspections.map(({ device: dev, items, completedToday }) => (
-                  <li
-                    key={dev.id}
-                    className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2"
-                  >
-                    <div className="min-w-0 space-y-1 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-slate-900 truncate">{dev.name}</p>
-                        <Badge
-                          className={cn(
-                            'text-[10px] border-0',
-                            completedToday
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-900',
-                          )}
-                        >
-                          {completedToday ? '本日完了' : '未実施'}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-slate-600">
-                        {dev.barcode ? (
-                          <span className="font-mono mr-2">{dev.barcode}</span>
-                        ) : (
-                          <span className="text-slate-400 mr-2">コードなし</span>
-                        )}
-                        {dev.location ||
-                          [dev.department, dev.manufacturer, dev.model].filter(Boolean).join(' / ') ||
-                          null}
-                      </p>
-                      <ul className="text-xs text-teal-900/90 list-disc list-inside space-y-0.5 pl-0.5">
-                        {items.map((item) => (
-                          <li key={item.key}>{item.label}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <Link
-                      href={dailyInspectionHref(dev)}
-                      className={cn(
-                        buttonVariants({ variant: 'outline', size: 'sm' }),
-                        'shrink-0 h-7 text-xs border-teal-200 text-teal-900 hover:bg-teal-50',
-                      )}
-                    >
-                      {completedToday ? '再記録' : '点検へ'}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        )}
-      </Card>
-
-      <Card className="border-0 shadow-sm border-l-4 border-l-blue-500 bg-blue-50/35 overflow-hidden">
-        <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-blue-50/80 border-b border-blue-100">
-          <div className="min-w-0 space-y-1">
-            <CardTitle className="text-base font-semibold text-blue-950 flex items-center gap-2">
-              <CalendarDays className="h-5 w-5 text-blue-700 shrink-0" />
-              {currentMonthLabel}の定期点検
-            </CardTitle>
-            <p className="text-xs text-blue-900/75 font-normal leading-snug">
-              次回点検予定が今月の機器です（今月すでに点検済みの機器は除きます）。
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <Badge variant="outline" className="border-blue-300 text-blue-900 bg-white">
-              {loading ? '…' : `${inspectionDueThisMonth.length} 件`}
-            </Badge>
-            <Link
-              href="/maintenance/annual"
-              className="text-[10px] text-blue-700 underline"
-            >
-              年間計画へ
-            </Link>
-          </div>
-        </CardHeader>
-        <CardContent className="py-3 px-4">
-          {loading ? (
-            <p className="text-sm text-blue-900/70 py-2">読み込み中…</p>
-          ) : inspectionDueThisMonth.length === 0 ? (
-            <p className="text-sm text-blue-900/70 py-1">
-              今月予定の定期点検はありません。
-            </p>
-          ) : (
-            <ul className="max-h-72 overflow-y-auto divide-y divide-blue-100 text-sm">
-              {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => {
-                const planned = plannedDate
-                  ? parse(plannedDate, 'yyyy-MM-dd', new Date())
-                  : null
-                const isPast =
-                  planned && startOfDay(planned) < startOfDay(new Date())
-                return (
-                  <li
-                    key={dev.id}
-                    className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2"
-                  >
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="font-medium text-slate-900 truncate">{dev.name}</p>
-                      <p className="text-xs text-slate-600">
-                        {dev.barcode ? (
-                          <span className="font-mono mr-2">{dev.barcode}</span>
-                        ) : (
-                          <span className="text-slate-400 mr-2">コードなし</span>
-                        )}
-                        {dev.location || [dev.manufacturer, dev.model].filter(Boolean).join(' / ') || null}
-                      </p>
-                      <p className="text-xs text-blue-900 font-medium">
-                        予定日:{' '}
-                        {plannedDate
-                          ? plannedDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')
-                          : '—'}
-                        {isPast && (
-                          <span className="text-amber-800 ml-1">（予定日を過ぎています）</span>
-                        )}
-                        {lastInspection && (
-                          <span className="text-slate-500 font-normal ml-1">
-                            · 前回:{' '}
-                            {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <Link
-                      href={maintenanceInspectionHref(dev)}
-                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-7 text-xs')}
-                    >
-                      点検へ
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="border-0 shadow-sm border-l-4 border-l-amber-500 bg-amber-50/35 overflow-hidden">
-        <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-amber-50/80 border-b border-amber-100">
-          <div className="min-w-0 space-y-1">
-            <CardTitle className="text-base font-semibold text-amber-950 flex items-center gap-2">
-              <CalendarClock className="h-5 w-5 text-amber-700 shrink-0" />
-              定期点検（期間超過・未実施）
-            </CardTitle>
-            <p className="text-xs text-amber-900/75 font-normal leading-snug">
-              ステータスが「利用中」の機器のうち、メンテナンスマスタ（点検項目あり）登録済みで点検期間超過などのものを表示します。
-            </p>
-          </div>
-          <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white shrink-0">
-            {loading ? '…' : `${inspectionStale.length} 件`}
+      {/* ── ヘッダー行（サマリーチップ付き） ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <h1 className="text-xl font-bold text-slate-800">ダッシュボード</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-slate-400">進行中依頼</span>
+          <Badge variant="secondary" className="text-xs">合計 {requests.length}</Badge>
+          <Badge className="text-xs bg-orange-100 text-orange-800 border-0 hover:bg-orange-100">
+            <Wrench className="h-3 w-3 mr-1" />修理 {repairList.length}
           </Badge>
-        </CardHeader>
-        <CardContent className="py-3 px-4">
-          {loading ? (
-            <p className="text-sm text-amber-900/70 py-2">読み込み中…</p>
-          ) : inspectionStale.length === 0 ? (
-            <p className="text-sm text-amber-900/70 py-1">
-              点検期間内の機器のみです。期間超過の機器はありません。
-            </p>
-          ) : (
-            <ul className="max-h-72 overflow-y-auto divide-y divide-amber-100 text-sm">
-              {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, plannedDate: dueDate }) => (
-                <li key={dev.id} className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="font-medium text-slate-900 truncate">{dev.name}</p>
-                    <p className="text-xs text-slate-600">
-                      {dev.barcode ? (
-                        <span className="font-mono mr-2">{dev.barcode}</span>
-                      ) : (
-                        <span className="text-slate-400 mr-2">コードなし</span>
-                      )}
-                      {[dev.manufacturer, dev.model].filter(Boolean).join(' / ') || null}
-                    </p>
-                    <p className="text-xs text-amber-900 font-medium">
-                      点検期間: {intervalMonthsLabel(intervalMonths)}
-                      {lastInspection === null ? (
-                        dueDate ? (
-                          <>
-                            {' '}
-                            · 次回予定:{' '}
-                            {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                            （未点検・予定あり）
-                          </>
-                        ) : (
-                          <> · 定期点検の記録がありません</>
-                        )
-                      ) : (
-                        <>
-                          {' '}
-                          · 最終点検:{' '}
-                          {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                          {dueDate && (
+          <Badge className="text-xs bg-green-100 text-green-800 border-0 hover:bg-green-100">
+            <ShoppingCart className="h-3 w-3 mr-1" />購入 {purchaseList.length}
+          </Badge>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={fetchRequests}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            更新
+          </Button>
+        </div>
+      </div>
+
+      {/* ── メイングリッド ── */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3">
+
+        {/* ======= 左列: 点検パネル ======= */}
+        <div className="flex flex-col gap-3 min-h-0">
+
+          {/* 日常点検（折りたたみ） */}
+          <div className="shrink-0 rounded-xl border-l-4 border-l-teal-500 bg-teal-50/35 border border-teal-100 shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setDailyExpanded((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 px-4 py-2.5 bg-teal-50/80 hover:bg-teal-100/60 transition-colors text-left"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold text-teal-950 min-w-0">
+                <ClipboardCheck className="h-4 w-4 text-teal-700 shrink-0" />
+                <span className="truncate">日常点検（{todayLabel}）</span>
+              </span>
+              <span className="flex items-center gap-2 shrink-0">
+                <Badge variant="outline" className="border-teal-300 text-teal-900 bg-white text-[10px]">
+                  {loading ? '…' : `未実施 ${dailyPendingCount} / ${dailyInspections.length}`}
+                </Badge>
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 text-teal-600 transition-transform',
+                    dailyExpanded && 'rotate-180',
+                  )}
+                />
+              </span>
+            </button>
+            {dailyExpanded && (
+              <div className="px-4 py-2 overflow-y-auto max-h-48">
+                {loading ? (
+                  <p className="text-sm text-teal-900/70 py-1">読み込み中…</p>
+                ) : dailyInspections.length === 0 ? (
+                  <p className="text-xs text-teal-900/70 py-1">
+                    本日の日常点検対象がありません。マスタの「日常点検」タブで登録してください。
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-teal-100 text-sm">
+                    {dailyInspections.map(({ device: dev, items, completedToday }) => (
+                      <li key={dev.id} className="py-2 first:pt-1 flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-medium text-slate-900 truncate text-xs">{dev.name}</span>
+                            <Badge className={cn('text-[9px] border-0 px-1 py-0',
+                              completedToday ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900')}>
+                              {completedToday ? '完了' : '未実施'}
+                            </Badge>
+                          </div>
+                          <p className="text-[10px] text-slate-500 truncate">
+                            {[dev.location, items.map(i => i.label).join('・')].filter(Boolean).join(' / ')}
+                          </p>
+                        </div>
+                        <Link
+                          href={dailyInspectionHref(dev)}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }),
+                            'shrink-0 h-6 text-[10px] px-2 border-teal-200 text-teal-900')}
+                        >
+                          {completedToday ? '再記録' : '点検へ'}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 今月の定期点検（flex-1、内部スクロール） */}
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl border-l-4 border-l-blue-500 bg-blue-50/35 border border-blue-100 shadow-sm overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-blue-50/80 border-b border-blue-100">
+              <span className="flex items-center gap-2 text-sm font-semibold text-blue-950 min-w-0">
+                <CalendarDays className="h-4 w-4 text-blue-700 shrink-0" />
+                <span className="truncate">{currentMonthLabel}の定期点検</span>
+              </span>
+              <span className="flex items-center gap-2 shrink-0">
+                <Badge variant="outline" className="border-blue-300 text-blue-900 bg-white text-[10px]">
+                  {loading ? '…' : `${inspectionDueThisMonth.length} 件`}
+                </Badge>
+                <Link href="/maintenance/annual" className="text-[10px] text-blue-700 underline">
+                  年間計画
+                </Link>
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-2">
+              {loading ? (
+                <p className="text-sm text-blue-900/70 py-2">読み込み中…</p>
+              ) : inspectionDueThisMonth.length === 0 ? (
+                <p className="text-sm text-blue-900/70 py-2">今月予定の定期点検はありません。</p>
+              ) : (
+                <ul className="divide-y divide-blue-100 text-sm">
+                  {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => {
+                    const planned = plannedDate ? parse(plannedDate, 'yyyy-MM-dd', new Date()) : null
+                    const isPast = planned && startOfDay(planned) < startOfDay(new Date())
+                    return (
+                      <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
+                          <p className="text-[10px] text-slate-500">
+                            {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
+                            {dev.location || [dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
+                          </p>
+                          <p className="text-[10px] text-blue-900 font-medium">
+                            予定: {plannedDate?.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3') ?? '—'}
+                            {isPast && <span className="text-amber-700 ml-1">（過ぎています）</span>}
+                            {lastInspection && (
+                              <span className="text-slate-500 font-normal ml-1">
+                                · 前回: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <Link
+                          href={maintenanceInspectionHref(dev)}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
+                        >
+                          点検へ
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* 期間超過・未実施（flex-1、内部スクロール） */}
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl border-l-4 border-l-amber-500 bg-amber-50/35 border border-amber-100 shadow-sm overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-amber-50/80 border-b border-amber-100">
+              <span className="flex items-center gap-2 text-sm font-semibold text-amber-950 min-w-0">
+                <CalendarClock className="h-4 w-4 text-amber-700 shrink-0" />
+                <span className="truncate">期間超過・未実施</span>
+              </span>
+              <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white text-[10px] shrink-0">
+                {loading ? '…' : `${inspectionStale.length} 件`}
+              </Badge>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-2">
+              {loading ? (
+                <p className="text-sm text-amber-900/70 py-2">読み込み中…</p>
+              ) : inspectionStale.length === 0 ? (
+                <p className="text-sm text-amber-900/70 py-2">期間超過の機器はありません。</p>
+              ) : (
+                <ul className="divide-y divide-amber-100 text-sm">
+                  {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, plannedDate: dueDate }) => (
+                    <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
+                          {[dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
+                        </p>
+                        <p className="text-[10px] text-amber-900 font-medium">
+                          {intervalMonthsLabel(intervalMonths)}サイクル
+                          {lastInspection === null ? (
+                            dueDate
+                              ? <> · 次回予定: {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}（未点検）</>
+                              : <> · 点検記録なし</>
+                          ) : (
                             <>
-                              {' '}
-                              · 期限:{' '}
-                              {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                              （
-                              {differenceInCalendarDays(
-                                startOfDay(new Date()),
-                                startOfDay(parse(dueDate, 'yyyy-MM-dd', new Date())),
+                              {' '}· 最終: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                              {dueDate && (
+                                <> · 期限: {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                                （{differenceInCalendarDays(startOfDay(new Date()), startOfDay(parse(dueDate, 'yyyy-MM-dd', new Date())))}日超過）</>
                               )}
-                              日超過）
                             </>
                           )}
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <Link
-                    href={maintenanceInspectionHref(dev)}
-                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-7 text-xs')}
-                  >
-                    点検へ
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-slate-400">
-          <RefreshCw className="h-5 w-5 animate-spin mr-2" />
-          読み込み中...
+                        </p>
+                      </div>
+                      <Link
+                        href={maintenanceInspectionHref(dev)}
+                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
+                      >
+                        点検へ
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                <Hammer className="h-5 w-5 text-orange-600" />
+
+        {/* ======= 右列: 依頼パネル ======= */}
+        <div className="flex flex-col gap-3 min-h-0">
+
+          {/* 修理依頼 */}
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-orange-50/60 border-b border-orange-100">
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <Hammer className="h-4 w-4 text-orange-600 shrink-0" />
                 修理依頼 — 機器別
-              </h2>
+              </span>
               <Link
                 href="/requests/repair"
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-0.5')}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-6 text-[10px] px-2 gap-0.5')}
               >
-                一覧へ
-                <ChevronRight className="h-4 w-4 ml-0.5" />
+                一覧へ <ChevronRight className="h-3 w-3" />
               </Link>
             </div>
-            {repairList.length === 0 ? (
-              <Card className="border-0 shadow-sm">
-                <CardContent className="py-8">
-                  <p className="text-sm text-slate-400 text-center">
-                    進行中の修理依頼はありません
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {repairGroups.map((g) => (
-                  <Card key={g.key} className="border-0 shadow-sm overflow-hidden">
-                    <CardHeader className="py-3 px-4 bg-orange-50/60 border-b border-orange-100">
-                      <CardTitle className="text-sm font-semibold text-slate-800 leading-snug">
-                        {g.label}
-                      </CardTitle>
-                      <p className="text-xs text-slate-500 font-normal">
-                        進行中 {g.requests.length} 件
-                      </p>
-                    </CardHeader>
-                    <CardContent className="py-3 px-4 space-y-3">
-                      {g.requests.map((req) => {
-                        const pct = requestProgressPct('repair', req.status)
-                        return (
-                          <div
-                            key={req.id}
-                            className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 space-y-2"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Badge
-                                className={`text-xs font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}
-                              >
-                                {req.status}
-                              </Badge>
-                              <span className="text-xs text-slate-500 tabular-nums">{pct}%</span>
+            <div className="flex-1 overflow-y-auto px-3 py-2">
+              {repairList.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-6">進行中の修理依頼はありません</p>
+              ) : (
+                <div className="space-y-2">
+                  {repairGroups.map((g) => (
+                    <div key={g.key} className="rounded-lg border border-slate-100 overflow-hidden">
+                      <div className="px-3 py-2 bg-orange-50/60 border-b border-orange-100">
+                        <p className="text-xs font-semibold text-slate-800 leading-snug">{g.label}</p>
+                        <p className="text-[10px] text-slate-500">進行中 {g.requests.length} 件</p>
+                      </div>
+                      <div className="px-3 py-2 space-y-2">
+                        {g.requests.map((req) => {
+                          const pct = requestProgressPct('repair', req.status)
+                          return (
+                            <div key={req.id} className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <Badge className={`text-[10px] font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}>
+                                  {req.status}
+                                </Badge>
+                                <span className="text-[10px] text-slate-400 tabular-nums">{pct}%</span>
+                              </div>
+                              <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
+                                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                              <p className="text-[10px] text-slate-600 line-clamp-1">{req.description}</p>
                             </div>
-                            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-orange-500 rounded-full transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <p className="text-xs text-slate-600 line-clamp-2">{req.description}</p>
-                          </div>
-                        )
-                      })}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </section>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5 text-green-600" />
+          {/* 購入依頼 */}
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-green-50/60 border-b border-green-100">
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <ShoppingCart className="h-4 w-4 text-green-600 shrink-0" />
                 購入依頼 — 依頼機器別
-              </h2>
+              </span>
               <Link
                 href="/requests/purchase"
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-0.5')}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-6 text-[10px] px-2 gap-0.5')}
               >
-                一覧へ
-                <ChevronRight className="h-4 w-4 ml-0.5" />
+                一覧へ <ChevronRight className="h-3 w-3" />
               </Link>
             </div>
-            {purchaseList.length === 0 ? (
-              <Card className="border-0 shadow-sm">
-                <CardContent className="py-8">
-                  <p className="text-sm text-slate-400 text-center">
-                    進行中の購入依頼はありません
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {purchaseGroups.map((g) => (
-                  <Card key={g.key} className="border-0 shadow-sm overflow-hidden">
-                    <CardHeader className="py-3 px-4 bg-green-50/60 border-b border-green-100">
-                      <CardTitle className="text-sm font-semibold text-slate-800 leading-snug">
-                        {g.label}
-                      </CardTitle>
-                      <p className="text-xs text-slate-500 font-normal">
-                        進行中 {g.requests.length} 件
-                      </p>
-                    </CardHeader>
-                    <CardContent className="py-3 px-4 space-y-3">
-                      {g.requests.map((req) => {
-                        const pct = requestProgressPct('purchase', req.status)
-                        return (
-                          <div
-                            key={req.id}
-                            className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 space-y-2"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Badge
-                                className={`text-xs font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}
-                              >
-                                {req.status}
-                              </Badge>
-                              <span className="text-xs text-slate-500 tabular-nums">{pct}%</span>
+            <div className="flex-1 overflow-y-auto px-3 py-2">
+              {purchaseList.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-6">進行中の購入依頼はありません</p>
+              ) : (
+                <div className="space-y-2">
+                  {purchaseGroups.map((g) => (
+                    <div key={g.key} className="rounded-lg border border-slate-100 overflow-hidden">
+                      <div className="px-3 py-2 bg-green-50/60 border-b border-green-100">
+                        <p className="text-xs font-semibold text-slate-800 leading-snug">{g.label}</p>
+                        <p className="text-[10px] text-slate-500">進行中 {g.requests.length} 件</p>
+                      </div>
+                      <div className="px-3 py-2 space-y-2">
+                        {g.requests.map((req) => {
+                          const pct = requestProgressPct('purchase', req.status)
+                          return (
+                            <div key={req.id} className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <Badge className={`text-[10px] font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}>
+                                  {req.status}
+                                </Badge>
+                                <span className="text-[10px] text-slate-400 tabular-nums">{pct}%</span>
+                              </div>
+                              <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-600 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                              <p className="text-[10px] text-slate-600 line-clamp-1">{req.description}</p>
                             </div>
-                            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-green-600 rounded-full transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                            <p className="text-xs text-slate-600 line-clamp-2">{req.description}</p>
-                          </div>
-                        )
-                      })}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
-      <div className="flex flex-wrap gap-3 justify-center pt-2">
-        <Link href="/requests/repair" className={cn(buttonVariants(), 'inline-flex items-center')}>
-          <Hammer className="h-4 w-4 mr-2" />
-          修理依頼を開く
-        </Link>
-        <Link
-          href="/requests/purchase"
-          className={cn(buttonVariants({ variant: 'secondary' }), 'inline-flex items-center')}
-        >
-          <ShoppingCart className="h-4 w-4 mr-2" />
-          購入依頼を開く
-        </Link>
+        </div>
       </div>
     </div>
   )
