@@ -94,16 +94,20 @@ create table if not exists maintenance_model_masters (
   checklist_items jsonb not null default '[]'::jsonb,
   maintenance_method text,
   inspection_interval_months integer not null default 12,
+  master_type text not null default 'periodic',
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   constraint maintenance_model_masters_interval_check
-    check (inspection_interval_months >= 1 and inspection_interval_months <= 120)
+    check (inspection_interval_months >= 1 and inspection_interval_months <= 120),
+  constraint maintenance_model_masters_master_type_check
+    check (master_type in ('periodic', 'daily'))
 );
 
-create unique index if not exists maintenance_model_masters_unique_model
+create unique index if not exists maintenance_model_masters_unique_model_type
   on maintenance_model_masters (
     lower(trim(both from coalesce(manufacturer, ''))),
-    lower(trim(both from coalesce(model, '')))
+    lower(trim(both from coalesce(model, ''))),
+    master_type
   );
 
 -- 一括テンプレート（マスタ名＋点検項目）
@@ -111,12 +115,18 @@ create table if not exists maintenance_checklist_templates (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   checklist_items jsonb not null default '[]'::jsonb,
+  master_type text not null default 'periodic',
   created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  constraint maintenance_checklist_templates_master_type_check
+    check (master_type in ('periodic', 'daily'))
 );
 
-create unique index if not exists maintenance_checklist_templates_unique_name
-  on maintenance_checklist_templates (lower(trim(both from coalesce(name, ''))));
+create unique index if not exists maintenance_checklist_templates_unique_name_type
+  on maintenance_checklist_templates (
+    lower(trim(both from coalesce(name, ''))),
+    master_type
+  );
 
 -- メンテナンス記録
 create table if not exists maintenance_records (

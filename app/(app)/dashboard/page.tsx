@@ -123,6 +123,12 @@ export default function DashboardPage() {
   const [inspectionDueThisMonth, setInspectionDueThisMonth] = useState<InspectionListEntry[]>([])
   const [dailyInspections, setDailyInspections] = useState<DailyInspectionEntry[]>([])
   const [dailyExpanded, setDailyExpanded] = useState(false)
+  const [diag, setDiag] = useState({
+    masterCount: -1,
+    periodicMasterCount: 0,
+    dailyMasterCount: 0,
+    activeDeviceCount: 0,
+  })
 
   const fetchInspectionLists = useCallback(async () => {
     const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -235,6 +241,14 @@ export default function DashboardPage() {
 
     setInspectionDueThisMonth(dueMonth)
     setInspectionStale(stale)
+    setDiag({
+      masterCount: allMasters.length,
+      periodicMasterCount: filterPeriodicMasters(allMasters).length,
+      dailyMasterCount: allMasters.filter((m) => m.master_type === 'daily').length,
+      activeDeviceCount: ((devices ?? []) as { status: string }[]).filter(
+        (d) => d.status === 'active',
+      ).length,
+    })
   }, [supabase])
 
   const fetchRequests = useCallback(async () => {
@@ -355,9 +369,33 @@ export default function DashboardPage() {
                 {loading ? (
                   <p className="text-sm text-teal-900/70 py-1">読み込み中…</p>
                 ) : dailyInspections.length === 0 ? (
-                  <p className="text-xs text-teal-900/70 py-1">
-                    本日の日常点検対象がありません。マスタの「日常点検」タブで登録してください。
-                  </p>
+                  <div className="text-xs text-teal-900/70 py-1 space-y-1.5">
+                    <p className="font-medium">本日の日常点検対象がありません。</p>
+                    <ul className="space-y-0.5 text-[11px] text-teal-800/80">
+                      {diag.dailyMasterCount === 0 && (
+                        <li className="flex items-start gap-1">
+                          <span className="shrink-0 text-red-500 mt-px">✗</span>
+                          <span>
+                            日常点検マスタ未登録 → 
+                            <Link href="/maintenance/master" className="underline ml-1">マスタ画面の「日常点検」タブ</Link>
+                            で登録してください
+                          </span>
+                        </li>
+                      )}
+                      {diag.dailyMasterCount > 0 && diag.activeDeviceCount === 0 && (
+                        <li className="flex items-start gap-1">
+                          <span className="shrink-0 text-amber-500 mt-px">!</span>
+                          <span>稼働中（ステータス: 利用中）の機器がありません。機器台帳を確認してください。</span>
+                        </li>
+                      )}
+                      {diag.dailyMasterCount > 0 && diag.activeDeviceCount > 0 && (
+                        <li className="flex items-start gap-1">
+                          <span className="shrink-0 text-amber-500 mt-px">!</span>
+                          <span>機器台帳の「メーカー」「型式」と日常点検マスタの値が一致しているか確認してください。</span>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
                 ) : (
                   <ul className="divide-y divide-teal-100 text-sm">
                     {dailyInspections.map(({ device: dev, items, completedToday }) => (
@@ -409,7 +447,21 @@ export default function DashboardPage() {
               {loading ? (
                 <p className="text-sm text-blue-900/70 py-2">読み込み中…</p>
               ) : inspectionDueThisMonth.length === 0 ? (
-                <p className="text-sm text-blue-900/70 py-2">今月予定の定期点検はありません。</p>
+                <div className="text-sm text-blue-900/70 py-2 space-y-1.5">
+                  <p>今月予定の定期点検はありません。</p>
+                  {diag.masterCount === 0 && (
+                    <p className="text-[11px] text-blue-800/80">
+                      ⚠ 定期点検マスタが0件です。
+                      <Link href="/maintenance/master" className="underline ml-1">マスタ画面</Link>
+                      で「定期点検」タブに機器を登録してください。
+                    </p>
+                  )}
+                  {diag.periodicMasterCount > 0 && inspectionStale.length === 0 && (
+                    <p className="text-[11px] text-blue-800/80">
+                      期間超過・未実施も0件です。機器台帳の「メーカー」「型式」とマスタが一致しているか確認してください。
+                    </p>
+                  )}
+                </div>
               ) : (
                 <ul className="divide-y divide-blue-100 text-sm">
                   {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => {
@@ -462,7 +514,26 @@ export default function DashboardPage() {
               {loading ? (
                 <p className="text-sm text-amber-900/70 py-2">読み込み中…</p>
               ) : inspectionStale.length === 0 ? (
-                <p className="text-sm text-amber-900/70 py-2">期間超過の機器はありません。</p>
+                <div className="text-sm text-amber-900/70 py-2 space-y-1.5">
+                  <p>期間超過・未実施の機器はありません。</p>
+                  {diag.masterCount !== -1 && diag.periodicMasterCount === 0 && (
+                    <p className="text-[11px] text-amber-800/80">
+                      ⚠ 定期点検マスタ未登録。
+                      <Link href="/maintenance/master" className="underline ml-1">マスタ画面</Link>
+                      でメーカー・型式マスタを登録してください（点検項目が1件以上必要です）。
+                    </p>
+                  )}
+                  {diag.periodicMasterCount > 0 && diag.activeDeviceCount === 0 && (
+                    <p className="text-[11px] text-amber-800/80">
+                      ⚠ 稼働中（利用中）の機器がありません。機器台帳のステータスを確認してください。
+                    </p>
+                  )}
+                  {diag.periodicMasterCount > 0 && diag.activeDeviceCount > 0 && (
+                    <p className="text-[11px] text-amber-800/80">
+                      機器台帳の「メーカー」「型式」と定期点検マスタの値が一致しているか確認してください。
+                    </p>
+                  )}
+                </div>
               ) : (
                 <ul className="divide-y divide-amber-100 text-sm">
                   {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, plannedDate: dueDate }) => (

@@ -140,20 +140,30 @@ export default function MaintenanceMasterPage() {
     setTemplateItems([])
   }, [activeTab])
 
+  const [migrationMissing, setMigrationMissing] = useState(false)
+
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [{ data: devData }, { data: masData }, tplRes] = await Promise.all([
+    const [{ data: devData }, masRes, tplRes] = await Promise.all([
       supabase.from('devices').select('manufacturer, model'),
-      supabase.from('maintenance_model_masters').select('id, manufacturer, model, master_type'),
-      supabase
-        .from('maintenance_checklist_templates')
-        .select('id, name, master_type, checklist_items')
-        .order('name'),
+      supabase.from('maintenance_model_masters').select('*'),
+      supabase.from('maintenance_checklist_templates').select('*').order('name'),
     ])
     setDevices((devData as { manufacturer: string | null; model: string | null }[]) ?? [])
-    setMasterRows((masData as typeof masterRows) ?? [])
+
+    if (masRes.error) {
+      console.error('[マスタ取得]', masRes.error.message)
+      setMasterRows([])
+      setMigrationMissing(true)
+    } else {
+      const rows = (masRes.data ?? []) as MasterRowBrief[]
+      const hasMasterType = rows.length === 0 || 'master_type' in (rows[0] ?? {})
+      setMigrationMissing(!hasMasterType)
+      setMasterRows(rows)
+    }
+
     if (tplRes.error) {
-      console.error('[テンプレート]', tplRes.error.message)
+      console.error('[テンプレート取得]', tplRes.error.message)
       setTemplates([])
     } else {
       setTemplates((tplRes.data as TemplateRow[]) ?? [])
@@ -538,6 +548,17 @@ export default function MaintenanceMasterPage() {
           </button>
         ))}
       </div>
+
+      {migrationMissing && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-2">
+          <p className="text-sm font-semibold text-red-800">⚠ DB マイグレーションが未実行です</p>
+          <p className="text-xs text-red-700 leading-relaxed">
+            Supabase SQL Editor で{' '}
+            <code className="bg-red-100 px-1 rounded">migration_master_type.sql</code>{' '}
+            を実行してください。実行しないとマスタの保存・タブ分け・日常点検機能が使えません。
+          </p>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-slate-500 py-8">
