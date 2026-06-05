@@ -633,7 +633,7 @@ export default function MaintenanceMasterPage() {
               <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 space-y-2">
                 <p className="text-sm text-emerald-900 font-medium">初回の点検計画（月均等）</p>
                 <p className="text-xs text-emerald-800/90 leading-relaxed">
-                  マスタ作成直後は全機器が「未実施」に見えることがあります。対象機器（未点検・次回予定なし）に、1月〜12月へ均等に次回点検予定日を設定します。2回目以降は点検記録に従い自動更新されます。
+                  マスタ作成直後は全機器が「未実施」に見えることがあります。対象機器（未点検・次回予定なし）に、当年の1月〜12月へ均等に次回点検予定日を設定します。2回目以降は点検記録に従い自動更新されます。
                 </p>
                 <Button
                   type="button"

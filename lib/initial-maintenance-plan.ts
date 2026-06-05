@@ -48,26 +48,21 @@ export function filterDevicesForInitialPlan(
 }
 
 /**
- * 機器を 1〜12 月に均等配分した次回点検予定日（各月15日）。
- * 今年の日付が過去の場合は翌年同月にずらす。
+ * 機器を当該年の1〜12月に均等配分（各月15日）。
+ * 過去の月もその年の日付で設定し、年間計画の該当月列に載せる。
  */
 export function buildEvenMonthlyDueDates(
   deviceIds: string[],
   today = new Date(),
   dayOfMonth = 15,
+  planYear?: number,
 ): Map<string, string> {
   const result = new Map<string, string>()
-  const todayStart = startOfDay(today)
-  const baseYear = today.getFullYear()
+  const baseYear = planYear ?? today.getFullYear()
 
   deviceIds.forEach((id, index) => {
     const month = (index % 12) + 1
-    let year = baseYear
-    let candidate = startOfDay(new Date(year, month - 1, dayOfMonth))
-    if (candidate < todayStart) {
-      year += 1
-      candidate = startOfDay(new Date(year, month - 1, dayOfMonth))
-    }
+    const candidate = startOfDay(new Date(baseYear, month - 1, dayOfMonth))
     result.set(id, format(candidate, 'yyyy-MM-dd'))
   })
 

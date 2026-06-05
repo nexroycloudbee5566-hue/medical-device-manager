@@ -82,12 +82,14 @@ function AnnualPlanBoard({
   overdue,
   months,
   unscheduled,
+  futureYears,
   year,
   totalPlanItems,
 }: {
   overdue: AnnualPlanItem[]
   months: { month: number; label: string; items: AnnualPlanItem[] }[]
   unscheduled: AnnualPlanItem[]
+  futureYears: { year: number; label: string; items: AnnualPlanItem[] }[]
   year: number
   totalPlanItems: number
 }) {
@@ -109,10 +111,19 @@ function AnnualPlanBoard({
         title: g.label,
         subtitle: `${year}`,
         headerClass:
-          g.month === currentMonth
+          g.month === currentMonth && year === new Date().getFullYear()
             ? 'bg-blue-100 text-blue-900 border-blue-200'
             : 'bg-slate-100 text-slate-800 border-slate-200',
         items: sortByBarcode(g.items),
+      })
+    }
+    for (const fy of futureYears) {
+      cols.push({
+        key: `fy-${fy.year}`,
+        title: fy.label,
+        subtitle: '予定',
+        headerClass: 'bg-violet-100 text-violet-900 border-violet-200',
+        items: sortByBarcode(fy.items),
       })
     }
     if (unscheduled.length > 0) {
@@ -124,7 +135,7 @@ function AnnualPlanBoard({
       })
     }
     return cols
-  }, [overdue, months, unscheduled, year, currentMonth])
+  }, [overdue, months, unscheduled, futureYears, year, currentMonth])
 
   if (totalPlanItems === 0) {
     return (
@@ -273,7 +284,7 @@ export default function AnnualMaintenancePage() {
   }, [supabase, fetchPlan])
 
   const summary = useMemo(() => summarizeAnnualPlan(items), [items])
-  const { overdue, months, unscheduled } = useMemo(
+  const { overdue, months, unscheduled, futureYears } = useMemo(
     () => groupPlanByMonth(items, year),
     [items, year],
   )
@@ -390,6 +401,7 @@ export default function AnnualMaintenancePage() {
                 overdue={overdue}
                 months={months}
                 unscheduled={unscheduled}
+                futureYears={futureYears}
                 year={year}
                 totalPlanItems={items.length}
               />
@@ -399,8 +411,8 @@ export default function AnnualMaintenancePage() {
       )}
 
       <p className="text-xs text-slate-400">
-        横にスクロールして全月を表示できます。翌年予定の機器は12月列に表示します。
-        次回予定は台帳の「次回点検予定」を優先します（未設定時は直近点検＋点検期間）。
+        横にスクロールして全月を表示できます。翌年以降の予定は右端の「○○年」列に表示します（12月には含めません）。
+        年を切り替えると、その年の月別予定を確認できます。
       </p>
     </div>
   )

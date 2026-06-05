@@ -113,19 +113,30 @@ export function buildAnnualPlanItems(
   return items
 }
 
+export type FutureYearPlanGroup = {
+  year: number
+  label: string
+  items: AnnualPlanItem[]
+}
+
 export function groupPlanByMonth(
   items: AnnualPlanItem[],
   year: number,
-): { overdue: AnnualPlanItem[]; months: AnnualPlanMonthGroup[]; unscheduled: AnnualPlanItem[] } {
+): {
+  overdue: AnnualPlanItem[]
+  months: AnnualPlanMonthGroup[]
+  unscheduled: AnnualPlanItem[]
+  /** 表示年より後の予定（12月に混ぜない） */
+  futureYears: FutureYearPlanGroup[]
+} {
   const overdue: AnnualPlanItem[] = []
   const unscheduled: AnnualPlanItem[] = []
   const byMonth = new Map<number, AnnualPlanItem[]>()
+  const futureByYear = new Map<number, AnnualPlanItem[]>()
 
   for (let m = 1; m <= 12; m++) {
     byMonth.set(m, [])
   }
-
-  const todayStart = startOfDay(new Date())
 
   for (const item of items) {
     if (item.completedInYear && item.lastCompletedDate) {
@@ -155,14 +166,12 @@ export function groupPlanByMonth(
     }
 
     if (plannedYear > year && !item.completedInYear) {
-      byMonth.get(12)!.push(item)
+      if (!futureByYear.has(plannedYear)) futureByYear.set(plannedYear, [])
+      futureByYear.get(plannedYear)!.push(item)
       continue
     }
 
     if (plannedYear === year) {
-      if (item.status === 'overdue' && planned < todayStart) {
-        overdue.push(item)
-      }
       byMonth.get(planned.getMonth() + 1)!.push(item)
       continue
     }
@@ -190,7 +199,19 @@ export function groupPlanByMonth(
   overdue.sort((a, b) => (a.plannedDate ?? '').localeCompare(b.plannedDate ?? ''))
   unscheduled.sort((a, b) => a.name.localeCompare(b.name, 'ja'))
 
-  return { overdue, months, unscheduled }
+  const futureYears: FutureYearPlanGroup[] = [...futureByYear.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([y, list]) => {
+      list.sort((a, b) => {
+        const ad = a.plannedDate ?? ''
+        const bd = b.plannedDate ?? ''
+        if (ad !== bd) return ad.localeCompare(bd)
+        return a.name.localeCompare(b.name, 'ja')
+      })
+      return { year: y, label: `${y}年`, items: list }
+    })
+
+  return { overdue, months, unscheduled, futureYears }
 }
 
 export function summarizeAnnualPlan(items: AnnualPlanItem[]) {
