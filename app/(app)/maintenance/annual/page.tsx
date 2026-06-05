@@ -207,8 +207,7 @@ export default function AnnualMaintenancePage() {
       supabase
         .from('devices')
         .select('*')
-        .not('status', 'eq', 'disposed')
-        .not('status', 'eq', 'inactive')
+        .eq('status', 'active')
         .order('barcode'),
       supabase
         .from('maintenance_records')
@@ -301,7 +300,7 @@ export default function AnnualMaintenancePage() {
             年間メンテナンス計画
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            {year}年の定期点検予定を月別の横一覧で表示します（ME No. をクリックで点検画面へ）。
+            {year}年の定期点検予定を月別表示します（対象: 利用中かつメンテナンスマスタ登録済みの機器）。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -413,7 +412,7 @@ export default function AnnualMaintenancePage() {
 
       <p className="text-xs text-slate-400">
         横にスクロールして全月を表示できます。翌年以降の予定は右端の「○○年」列に表示します（12月には含めません）。
-        年を切り替えると、その年の月別予定を確認できます。
+        移動・破棄・修理中などは表示されません。ME No. をクリックで点検画面へ。
       </p>
     </div>
   )
