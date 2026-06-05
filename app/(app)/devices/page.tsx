@@ -125,6 +125,7 @@ const emptyDevice = {
   dealer: '',
   purchase_date: '',
   status: 'active' as DeviceStatus,
+  next_maintenance_due: '',
   notes: '',
 }
 
@@ -353,6 +354,7 @@ export default function DevicesPage() {
         dealer: form.dealer.trim() || null,
         purchase_date: form.purchase_date.trim() || null,
         status: form.status,
+        next_maintenance_due: form.next_maintenance_due.trim() || null,
         notes: form.notes.trim() || null,
         updated_at: new Date().toISOString(),
       }
@@ -745,6 +747,7 @@ function deviceToForm(device: Device): typeof emptyDevice {
     dealer: device.dealer ?? '',
     purchase_date: device.purchase_date?.slice(0, 10) ?? '',
     status: normalizeFormStatus(device.status),
+    next_maintenance_due: device.next_maintenance_due?.slice(0, 10) ?? '',
     notes: device.notes ?? '',
   }
 }
@@ -820,6 +823,15 @@ function DeviceForm({
             <SelectItem value="repair">修理中</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+      <div className="space-y-1.5">
+        <Label>次回点検予定</Label>
+        <Input
+          type="date"
+          value={form.next_maintenance_due}
+          onChange={(e) => onChange('next_maintenance_due', e.target.value)}
+        />
+        <p className="text-[11px] text-slate-500">未入力でクリア。年間計画・ダッシュボードの予定日に反映されます。</p>
       </div>
       <div className="space-y-1.5 col-span-2">
         <Label>備考</Label>

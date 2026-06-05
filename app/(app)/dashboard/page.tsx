@@ -161,6 +161,7 @@ export default function DashboardPage() {
       }
 
       if (
+        dev.status === 'active' &&
         deviceHasInspectionMaster(masters, dev) &&
         isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)
       ) {
@@ -393,7 +394,7 @@ export default function DashboardPage() {
               定期点検（期間超過・未実施）
             </CardTitle>
             <p className="text-xs text-amber-900/75 font-normal leading-snug">
-              メンテナンスマスタ（点検項目あり）が登録された機器のうち、点検期間超過などのものを表示します。
+              ステータスが「利用中」の機器のうち、メンテナンスマスタ（点検項目あり）登録済みで点検期間超過などのものを表示します。
             </p>
           </div>
           <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white shrink-0">

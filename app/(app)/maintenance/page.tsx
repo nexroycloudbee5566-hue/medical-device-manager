@@ -216,6 +216,8 @@ function MaintenancePageContent() {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [masterReloading, setMasterReloading] = useState(false)
+  const [dueEdit, setDueEdit] = useState('')
+  const [dueSaving, setDueSaving] = useState(false)
 
   const fetchMasters = useCallback(async (): Promise<MaintenanceModelMaster[]> => {
     const { data, error } = await supabase.from('maintenance_model_masters').select('*')
@@ -266,6 +268,10 @@ function MaintenancePageContent() {
     if (device?.id) loadRecentForDevice(device.id)
     else setRecentRecords([])
   }, [device, loadRecentForDevice])
+
+  useEffect(() => {
+    setDueEdit(device?.next_maintenance_due?.slice(0, 10) ?? '')
+  }, [device?.id, device?.next_maintenance_due])
 
   async function reloadMastersManual() {
     setMasterReloading(true)
@@ -355,6 +361,38 @@ function MaintenancePageContent() {
     setDevice(null)
     setRecentRecords([])
     setChecklistResults({})
+    setDueEdit('')
+  }
+
+  async function saveNextMaintenanceDue(clear = false) {
+    if (!device) return
+    const nextValue = clear ? null : dueEdit.trim() || null
+    if (!clear && nextValue && !/^\d{4}-\d{2}-\d{2}$/.test(nextValue)) {
+      alert('次回点検予定の日付形式が正しくありません。')
+      return
+    }
+    setDueSaving(true)
+    try {
+      const { data, error } = await supabase
+        .from('devices')
+        .update({
+          next_maintenance_due: nextValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', device.id)
+        .select('*')
+        .maybeSingle()
+      if (error) {
+        alert(`次回点検予定の保存に失敗しました: ${error.message}`)
+        return
+      }
+      if (data) {
+        setDevice(data as Device)
+        setDueEdit(nextValue ?? '')
+      }
+    } finally {
+      setDueSaving(false)
+    }
   }
 
   async function submitInspection(e: React.FormEvent) {
@@ -556,18 +594,49 @@ function MaintenancePageContent() {
                     </dd>
                   </div>
                 )}
-                <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
-                  <dt className="text-slate-500 shrink-0">次回点検予定</dt>
-                  <dd className="text-right">
-                    {maintenanceDue ? (
-                      <span className={overdue ? 'text-red-600 font-semibold' : 'text-slate-800'}>
-                        {format(maintenanceDue, 'yyyy/MM/dd', { locale: ja })}
-                        {overdue && '（期限切れ）'}
-                      </span>
-                    ) : (
-                      '—'
+                <div className="border-b border-slate-100 pb-3 space-y-2">
+                  <div className="flex justify-between gap-4 items-center">
+                    <dt className="text-slate-500 shrink-0">次回点検予定</dt>
+                    {maintenanceDue && (
+                      <dd className="text-right text-xs">
+                        <span className={overdue ? 'text-red-600 font-semibold' : 'text-slate-600'}>
+                          {overdue ? '期限切れ' : '予定あり'}
+                        </span>
+                      </dd>
                     )}
-                  </dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <Input
+                      type="date"
+                      className="h-9 text-sm bg-white flex-1"
+                      value={dueEdit}
+                      onChange={(e) => setDueEdit(e.target.value)}
+                      disabled={dueSaving}
+                    />
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={dueSaving || dueEdit === (device.next_maintenance_due?.slice(0, 10) ?? '')}
+                        onClick={() => void saveNextMaintenanceDue()}
+                      >
+                        {dueSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '保存'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={dueSaving || !device.next_maintenance_due}
+                        onClick={() => void saveNextMaintenanceDue(true)}
+                      >
+                        クリア
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    手動で変更できます。点検記録登録時は型式マスタの点検期間から自動更新されます。
+                  </p>
                 </div>
               </dl>
               {device.notes && (
