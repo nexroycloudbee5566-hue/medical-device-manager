@@ -27,6 +27,7 @@ import {
 } from '@/lib/ptouch/bpac-detect'
 import { printMeLabelViaBpac } from '@/lib/ptouch/bpac-client'
 import { printMeLabelsInBrowser } from '@/lib/ptouch/browser-label-print'
+import { RECOMMENDED_LBX_DIR } from '@/lib/ptouch/lbx-path'
 
 export type MeLabelPrintTarget = Pick<Device, 'barcode' | 'name' | 'location'>
 
@@ -230,9 +231,14 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
               <Input
                 value={settings.templatePath}
                 onChange={(e) => setSettings((s) => ({ ...s, templatePath: e.target.value }))}
-                placeholder="C:\Labels\me-device.lbx"
+                placeholder={RECOMMENDED_LBX_DIR}
                 className="bg-white text-sm font-mono"
               />
+              <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                日本語フォルダ内の .lbx は開けないことがあります。{' '}
+                <code className="bg-white/80 px-1 rounded">{RECOMMENDED_LBX_DIR}</code>{' '}
+                など英数字のみのパスを推奨します。
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
