@@ -130,6 +130,8 @@ export type MaintenanceChecklistItemKind =
   | 'date'
   | 'text'
   | 'remarks'
+  /** 点検実施者名（自由入力） */
+  | 'inspector'
   /** 旧データ互換: 適・不適・対象外 */
   | 'legacy_okng'
 
@@ -150,6 +152,7 @@ export type ChecklistResultEntry =
   | { mode: 'date'; value: string }
   | { mode: 'text'; value: string }
   | { mode: 'remarks'; value: string }
+  | { mode: 'inspector'; value: string }
 
 /** メーカー＋型式に紐づく定期点検チェック項目マスタ */
 export interface MaintenanceModelMaster {

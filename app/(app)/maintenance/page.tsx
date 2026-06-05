@@ -188,6 +188,21 @@ function ChecklistRowInput({
     )
   }
 
+  if (item.kind === 'inspector') {
+    const r = entry?.mode === 'inspector' ? entry : { mode: 'inspector' as const, value: '' }
+    return (
+      <div className="space-y-1 w-full">
+        <span className="text-xs text-slate-400">{kindLabel}</span>
+        <Input
+          className="text-sm bg-white"
+          value={r.value}
+          onChange={(e) => onChange({ mode: 'inspector', value: e.target.value })}
+          placeholder="点検者名を入力"
+        />
+      </div>
+    )
+  }
+
   /* text */
   const r = entry?.mode === 'text' ? entry : { mode: 'text' as const, value: '' }
   return (

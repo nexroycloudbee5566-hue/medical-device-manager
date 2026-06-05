@@ -86,6 +86,7 @@ const KIND_SET = new Set<MaintenanceChecklistItemKind>([
   'date',
   'text',
   'remarks',
+  'inspector',
   'legacy_okng',
 ])
 
@@ -171,6 +172,8 @@ export function defaultResultForItem(item: MaintenanceChecklistItem): ChecklistR
       return { mode: 'text', value: '' }
     case 'remarks':
       return { mode: 'remarks', value: '' }
+    case 'inspector':
+      return { mode: 'inspector', value: '' }
     default:
       return { mode: 'legacy', status: '' }
   }
@@ -235,6 +238,10 @@ export function parseChecklistResultsFromDb(raw: unknown): Record<string, Checkl
       out[key] = { mode: 'remarks', value: v.value }
       continue
     }
+    if (mode === 'inspector' && typeof v.value === 'string') {
+      out[key] = { mode: 'inspector', value: v.value }
+      continue
+    }
   }
   return out
 }
@@ -281,6 +288,7 @@ export const CHECKLIST_KIND_LABEL: Record<MaintenanceChecklistItemKind, string> 
   date: '日付',
   text: '自由記入',
   remarks: '備考（自由記入）',
+  inspector: '点検者（自由入力）',
   legacy_okng: '適／不適／対象外（旧形式）',
 }
 
@@ -318,6 +326,8 @@ export function checklistEntryToDisplay(
     case 'text':
       return entry.value.trim() || '—'
     case 'remarks':
+      return entry.value.trim() || '—'
+    case 'inspector':
       return entry.value.trim() || '—'
     default:
       return '—'

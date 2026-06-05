@@ -24,6 +24,7 @@ const ADDABLE_KINDS: MaintenanceChecklistItemKind[] = [
   'date',
   'text',
   'remarks',
+  'inspector',
   'legacy_okng',
 ]
 
@@ -41,7 +42,7 @@ export function MaintenanceChecklistItemsEditor({
       ...items,
       {
         key: generateChecklistItemKey(),
-        label: '',
+        label: kind === 'inspector' ? '点検者' : '',
         kind,
         ...(kind === 'number' ? { unit: '' } : {}),
       },
