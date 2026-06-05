@@ -18,7 +18,7 @@ import { RefreshCw, Wrench, ShoppingCart, Hammer, ChevronRight, CalendarClock, C
 import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
+import { deviceHasInspectionMaster, mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
 import {
   derivePlannedDate,
@@ -159,7 +159,10 @@ export default function DashboardPage() {
         dueMonth.push(entry)
       }
 
-      if (isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)) {
+      if (
+        deviceHasInspectionMaster(masters, dev) &&
+        isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)
+      ) {
         const dueDate =
           dev.next_maintenance_due?.slice(0, 10) ?? inspectionDueDate(last, intervalMonths)
         stale.push({ ...entry, plannedDate: dueDate })
@@ -389,7 +392,7 @@ export default function DashboardPage() {
               定期点検（期間超過・未実施）
             </CardTitle>
             <p className="text-xs text-amber-900/75 font-normal leading-snug">
-              型式マスタで設定した点検期間を過ぎた機器、または点検記録のない機器を表示します。
+              メンテナンスマスタ（点検項目あり）が登録された機器のうち、点検期間超過などのものを表示します。
             </p>
           </div>
           <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white shrink-0">
