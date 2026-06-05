@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import type { MaintenanceChecklistItem } from '@/lib/types'
+import type { MaintenanceChecklistItem, MaintenanceMasterType } from '@/lib/types'
+import { MAINTENANCE_MASTER_TYPE_LABEL } from '@/lib/types'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,15 +39,30 @@ import {
 
 type Pair = { manufacturer: string; model: string }
 
-type TemplateRow = { id: string; name: string; checklist_items: unknown }
+type TemplateRow = { id: string; name: string; master_type?: string; checklist_items: unknown }
+type MasterRowBrief = { id: string; manufacturer: string; model: string; master_type?: string }
 
-function pairKey(p: Pair): string {
-  return `${normalizeModelKeyPart(p.manufacturer)}|${normalizeModelKeyPart(p.model)}`
+function pairKey(p: Pair, masterType: MaintenanceMasterType): string {
+  return `${masterType}|${normalizeModelKeyPart(p.manufacturer)}|${normalizeModelKeyPart(p.model)}`
+}
+
+function normalizeRowMasterType(raw: unknown): MaintenanceMasterType {
+  return raw === 'daily' ? 'daily' : 'periodic'
+}
+
+function itemsForMasterSave(items: MaintenanceChecklistItem[], tab: MaintenanceMasterType) {
+  if (tab === 'daily') {
+    return serializeChecklistTemplate(
+      items.map((i) => ({ ...i, frequency: i.frequency ?? 'daily' })),
+    )
+  }
+  return serializeChecklistTemplate(items)
 }
 
 function mergePairs(
   devices: { manufacturer: string | null; model: string | null }[],
   masters: { manufacturer: string; model: string }[],
+  masterType: MaintenanceMasterType,
 ): Pair[] {
   const map = new Map<string, Pair>()
   for (const d of devices) {
@@ -54,14 +70,14 @@ function mergePairs(
     const mo = (d.model ?? '').trim()
     if (!m || !mo) continue
     const p = { manufacturer: m, model: mo }
-    map.set(pairKey(p), p)
+    map.set(pairKey(p, masterType), p)
   }
   for (const row of masters) {
     const m = (row.manufacturer ?? '').trim()
     const mo = (row.model ?? '').trim()
     if (!m || !mo) continue
     const p = { manufacturer: m, model: mo }
-    map.set(pairKey(p), p)
+    map.set(pairKey(p, masterType), p)
   }
   return [...map.values()].sort((a, b) => {
     const c = a.manufacturer.localeCompare(b.manufacturer, 'ja')
@@ -72,8 +88,9 @@ function mergePairs(
 
 export default function MaintenanceMasterPage() {
   const supabase = useMemo(() => createClient(), [])
+  const [activeTab, setActiveTab] = useState<MaintenanceMasterType>('periodic')
   const [devices, setDevices] = useState<{ manufacturer: string | null; model: string | null }[]>([])
-  const [masterRows, setMasterRows] = useState<{ id: string; manufacturer: string; model: string }[]>([])
+  const [masterRows, setMasterRows] = useState<MasterRowBrief[]>([])
   const [templates, setTemplates] = useState<TemplateRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -96,14 +113,42 @@ export default function MaintenanceMasterPage() {
   const [templateName, setTemplateName] = useState('')
   const [templateItems, setTemplateItems] = useState<MaintenanceChecklistItem[]>([])
 
-  const pairs = useMemo(() => mergePairs(devices, masterRows), [devices, masterRows])
+  const tabMasterRows = useMemo(
+    () => masterRows.filter((r) => normalizeRowMasterType(r.master_type) === activeTab),
+    [masterRows, activeTab],
+  )
+  const tabTemplates = useMemo(
+    () => templates.filter((t) => normalizeRowMasterType(t.master_type) === activeTab),
+    [templates, activeTab],
+  )
+  const pairs = useMemo(
+    () => mergePairs(devices, tabMasterRows, activeTab),
+    [devices, tabMasterRows, activeTab],
+  )
+
+  useEffect(() => {
+    setSelectedKey('')
+    setManufacturer('')
+    setModel('')
+    setMasterId(null)
+    setModelItems([])
+    setMaintenanceMethod('')
+    setInspectionIntervalMonths(DEFAULT_INSPECTION_INTERVAL_MONTHS)
+    setApplyTemplateId('')
+    setSelectedTemplateId('')
+    setTemplateName('')
+    setTemplateItems([])
+  }, [activeTab])
 
   const loadAll = useCallback(async () => {
     setLoading(true)
     const [{ data: devData }, { data: masData }, tplRes] = await Promise.all([
       supabase.from('devices').select('manufacturer, model'),
-      supabase.from('maintenance_model_masters').select('id, manufacturer, model'),
-      supabase.from('maintenance_checklist_templates').select('id, name, checklist_items').order('name'),
+      supabase.from('maintenance_model_masters').select('id, manufacturer, model, master_type'),
+      supabase
+        .from('maintenance_checklist_templates')
+        .select('id, name, master_type, checklist_items')
+        .order('name'),
     ])
     setDevices((devData as { manufacturer: string | null; model: string | null }[]) ?? [])
     setMasterRows((masData as typeof masterRows) ?? [])
@@ -122,7 +167,7 @@ export default function MaintenanceMasterPage() {
 
   const loadPairDetail = useCallback(
     async (p: Pair) => {
-      const row = masterRows.find(
+      const row = tabMasterRows.find(
         (r) =>
           normalizeModelKeyPart(r.manufacturer) === normalizeModelKeyPart(p.manufacturer) &&
           normalizeModelKeyPart(r.model) === normalizeModelKeyPart(p.model),
@@ -149,17 +194,17 @@ export default function MaintenanceMasterPage() {
       }
       setApplyTemplateId('')
     },
-    [supabase, masterRows],
+    [supabase, tabMasterRows],
   )
 
   useEffect(() => {
     if (!selectedKey) return
-    const p = pairs.find((x) => pairKey(x) === selectedKey)
+    const p = pairs.find((x) => pairKey(x, activeTab) === selectedKey)
     if (!p) return
     setManufacturer(p.manufacturer)
     setModel(p.model)
     void loadPairDetail(p)
-  }, [selectedKey, pairs, loadPairDetail])
+  }, [selectedKey, pairs, loadPairDetail, activeTab])
 
   useEffect(() => {
     if (!selectedTemplateId || selectedTemplateId === '__new__') {
@@ -169,15 +214,15 @@ export default function MaintenanceMasterPage() {
       }
       return
     }
-    const row = templates.find((t) => t.id === selectedTemplateId)
+    const row = tabTemplates.find((t) => t.id === selectedTemplateId)
     if (!row) return
     setTemplateName(row.name)
     setTemplateItems(parseChecklistItems(row.checklist_items))
-  }, [selectedTemplateId, templates])
+  }, [selectedTemplateId, tabTemplates])
 
   function applyTemplateToModel() {
     if (!applyTemplateId) return
-    const row = templates.find((t) => t.id === applyTemplateId)
+    const row = tabTemplates.find((t) => t.id === applyTemplateId)
     if (!row) return
     const parsed = parseChecklistItems(row.checklist_items)
     if (parsed.length === 0) {
@@ -269,7 +314,7 @@ export default function MaintenanceMasterPage() {
       alert('メーカーと型式の両方を入力してください。')
       return
     }
-    const checklist_items = serializeChecklistTemplate(modelItems)
+    const checklist_items = itemsForMasterSave(modelItems, activeTab)
     const isNewMaster = !masterId
     setSaving(true)
     try {
@@ -282,6 +327,7 @@ export default function MaintenanceMasterPage() {
             checklist_items,
             maintenance_method: maintenanceMethod.trim() || null,
             inspection_interval_months: normalizeIntervalMonths(inspectionIntervalMonths),
+            master_type: activeTab,
             updated_at: new Date().toISOString(),
           })
           .eq('id', masterId)
@@ -294,15 +340,16 @@ export default function MaintenanceMasterPage() {
             checklist_items,
             maintenance_method: maintenanceMethod.trim() || null,
             inspection_interval_months: normalizeIntervalMonths(inspectionIntervalMonths),
+            master_type: activeTab,
           })
           .select('id')
           .single()
         if (!error && row?.id) setMasterId(row.id as string)
       }
       await loadAll()
-      setSelectedKey(pairKey({ manufacturer: man, model: mod }))
+      setSelectedKey(pairKey({ manufacturer: man, model: mod }, activeTab))
 
-      if (isNewMaster) {
+      if (isNewMaster && activeTab === 'periodic') {
         const ok = confirm(
           'メンテナンスマスタを保存しました。\n\n同じ型式の機器に、初回のみ「月均等」の点検計画を組みますか？\n（未点検・次回予定なしの機器だけ対象）',
         )
@@ -318,7 +365,11 @@ export default function MaintenanceMasterPage() {
           }
         }
       } else {
-        alert('メンテナンスマスタを保存しました。')
+        alert(
+          activeTab === 'daily'
+            ? '日常点検マスタを保存しました。（ダッシュボード・年間計画には表示されません）'
+            : 'メンテナンスマスタを保存しました。',
+        )
       }
     } finally {
       setSaving(false)
@@ -331,7 +382,9 @@ export default function MaintenanceMasterPage() {
     const mod = model.trim()
     const ok = confirm(
       `「${man} — ${mod}」のメンテナンスマスタを削除しますか？\n\n` +
-        '・ 年間計画・ダッシュボードの対象から外れます\n' +
+        (activeTab === 'daily'
+          ? '・ 日常点検マスタです（ダッシュボード・年間計画の対象外）\n'
+          : '・ 年間計画・ダッシュボードの対象から外れます\n') +
         '・ 既存の点検記録は残ります（マスタとの紐づけのみ解除）\n' +
         '・ 機器台帳の次回点検予定は変更されません\n\n' +
         'この操作は取り消せません。',
@@ -368,6 +421,10 @@ export default function MaintenanceMasterPage() {
       alert('先に型式マスタを保存してください。')
       return
     }
+    if (activeTab !== 'periodic') {
+      alert('初期計画（月均等）は定期点検マスタのみで利用できます。')
+      return
+    }
     setPlanningInitial(true)
     try {
       const n = await runInitialMaintenancePlan(man, mod, { askConfirm: true })
@@ -385,7 +442,7 @@ export default function MaintenanceMasterPage() {
       alert('テンプレート名（マスタ名）を入力してください。')
       return
     }
-    const checklist_items = serializeChecklistTemplate(templateItems)
+    const checklist_items = itemsForMasterSave(templateItems, activeTab)
     setSavingTemplate(true)
     try {
       if (selectedTemplateId && selectedTemplateId !== '__new__') {
@@ -394,6 +451,7 @@ export default function MaintenanceMasterPage() {
           .update({
             name,
             checklist_items,
+            master_type: activeTab,
             updated_at: new Date().toISOString(),
           })
           .eq('id', selectedTemplateId)
@@ -404,7 +462,7 @@ export default function MaintenanceMasterPage() {
       } else {
         const { data: row, error } = await supabase
           .from('maintenance_checklist_templates')
-          .insert({ name, checklist_items })
+          .insert({ name, checklist_items, master_type: activeTab })
           .select('id')
           .single()
         if (error) {
@@ -422,7 +480,7 @@ export default function MaintenanceMasterPage() {
 
   async function deleteTemplate() {
     if (!selectedTemplateId || selectedTemplateId === '__new__') return
-    const row = templates.find((t) => t.id === selectedTemplateId)
+    const row = tabTemplates.find((t) => t.id === selectedTemplateId)
     if (!row) return
     if (!confirm(`テンプレート「${row.name}」を削除しますか？`)) return
     const { error } = await supabase
@@ -457,8 +515,28 @@ export default function MaintenanceMasterPage() {
           メンテナンスマスタ
         </h1>
         <p className="text-slate-500 text-sm mt-0.5">
-          一括テンプレートを作成し、メーカー・型式ごとのマスタへ適用できます。登録内容は「定期点検」画面に反映されます。
+          {activeTab === 'periodic'
+            ? '一括テンプレートを作成し、メーカー・型式ごとのマスタへ適用できます。登録内容は「定期点検」画面・ダッシュボード・年間計画に反映されます。'
+            : '日常点検用のマスタを登録します。ダッシュボード・年間メンテナンス計画には表示されません。'}
         </p>
+      </div>
+
+      <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 max-w-md">
+        {(['periodic', 'daily'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              'flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors',
+              activeTab === tab
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900',
+            )}
+          >
+            {MAINTENANCE_MASTER_TYPE_LABEL[tab]}
+          </button>
+        ))}
       </div>
 
       {loading ? (
@@ -498,7 +576,7 @@ export default function MaintenanceMasterPage() {
                 <SelectContent className="max-h-72">
                   <SelectItem value="__none__">（未選択）</SelectItem>
                   <SelectItem value="__new__">＋ 新規テンプレート</SelectItem>
-                  {templates.map((t) => (
+                  {tabTemplates.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}（{parseChecklistItems(t.checklist_items).length}項目）
                     </SelectItem>
@@ -521,6 +599,8 @@ export default function MaintenanceMasterPage() {
                 <MaintenanceChecklistItemsEditor
                   items={templateItems}
                   onChange={setTemplateItems}
+                  showItemFrequency={activeTab === 'daily'}
+                  defaultItemFrequency="daily"
                 />
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button type="button" onClick={saveTemplate} disabled={savingTemplate}>
@@ -536,7 +616,7 @@ export default function MaintenanceMasterPage() {
               </div>
             )}
 
-            {templates.length === 0 && !selectedTemplateId && (
+            {tabTemplates.length === 0 && !selectedTemplateId && (
               <p className="text-sm text-slate-500">
                 テンプレートがありません。「＋ 新規テンプレート」から作成してください。
               </p>
@@ -574,7 +654,7 @@ export default function MaintenanceMasterPage() {
                 <SelectContent className="max-h-72">
                   <SelectItem value="__manual__">手入力でメーカー・型式を指定…</SelectItem>
                   {pairs.map((p) => (
-                    <SelectItem key={pairKey(p)} value={pairKey(p)}>
+                    <SelectItem key={pairKey(p, activeTab)} value={pairKey(p, activeTab)}>
                       {p.manufacturer} — {p.model}
                     </SelectItem>
                   ))}
@@ -619,35 +699,39 @@ export default function MaintenanceMasterPage() {
                 className="bg-white text-sm min-h-[120px]"
               />
               <p className="text-xs text-slate-500">
-                定期点検画面で参照できます。点検項目とは別に、作業手順や注意点を記載してください。
+                {activeTab === 'periodic'
+                  ? '定期点検画面で参照できます。点検項目とは別に、作業手順や注意点を記載してください。'
+                  : '日常点検実施時に参照できます。点検項目とは別に、作業手順や注意点を記載してください。'}
               </p>
             </div>
 
-            <div className="space-y-1.5 max-w-md">
-              <Label>点検期間（この型式の定期点検サイクル）</Label>
-              <Select
-                value={String(inspectionIntervalMonths)}
-                onValueChange={(v) =>
-                  setInspectionIntervalMonths(normalizeIntervalMonths(Number(v)))
-                }
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {INSPECTION_INTERVAL_OPTIONS.map((o) => (
-                    <SelectItem key={o.months} value={String(o.months)}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-slate-500">
-                ダッシュボードの未実施判定・次回点検予定・年間計画に反映されます。
-              </p>
-            </div>
+            {activeTab === 'periodic' && (
+              <div className="space-y-1.5 max-w-md">
+                <Label>点検期間（この型式の定期点検サイクル）</Label>
+                <Select
+                  value={String(inspectionIntervalMonths)}
+                  onValueChange={(v) =>
+                    setInspectionIntervalMonths(normalizeIntervalMonths(Number(v)))
+                  }
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INSPECTION_INTERVAL_OPTIONS.map((o) => (
+                      <SelectItem key={o.months} value={String(o.months)}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  ダッシュボードの未実施判定・次回点検予定・年間計画に反映されます。
+                </p>
+              </div>
+            )}
 
-            {templates.length > 0 && (
+            {tabTemplates.length > 0 && (
               <div className="flex flex-wrap items-end gap-2 rounded-lg bg-blue-50/80 border border-blue-100 p-3">
                 <div className="space-y-1.5 flex-1 min-w-[12rem]">
                   <Label className="text-blue-800">一括テンプレートから読み込む</Label>
@@ -660,7 +744,7 @@ export default function MaintenanceMasterPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">選択してください</SelectItem>
-                      {templates.map((t) => (
+                      {tabTemplates.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
                           {t.name}
                         </SelectItem>
@@ -684,23 +768,27 @@ export default function MaintenanceMasterPage() {
                 items={modelItems}
                 onChange={setModelItems}
                 emptyMessage="項目がありません。テンプレートから読み込むか、項目を追加してください。"
+                showItemFrequency={activeTab === 'daily'}
+                defaultItemFrequency="daily"
               />
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 space-y-2">
-                <p className="text-sm text-emerald-900 font-medium">初回の点検計画（月均等）</p>
-                <p className="text-xs text-emerald-800/90 leading-relaxed">
-                  マスタ作成直後は全機器が「未実施」に見えることがあります。対象機器（未点検・次回予定なし）に、当年の1月〜12月へ均等に次回点検予定日を設定します。2回目以降は点検記録に従い自動更新されます。
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="bg-white border-emerald-200 text-emerald-900 hover:bg-emerald-50"
-                  disabled={planningInitial || saving || !masterId}
-                  onClick={() => void handleInitialPlanClick()}
-                >
-                  {planningInitial && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  初期計画を組む（月均等）
-                </Button>
-              </div>
+              {activeTab === 'periodic' && (
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 space-y-2">
+                  <p className="text-sm text-emerald-900 font-medium">初回の点検計画（月均等）</p>
+                  <p className="text-xs text-emerald-800/90 leading-relaxed">
+                    マスタ作成直後は全機器が「未実施」に見えることがあります。対象機器（未点検・次回予定なし）に、当年の1月〜12月へ均等に次回点検予定日を設定します。2回目以降は点検記録に従い自動更新されます。
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="bg-white border-emerald-200 text-emerald-900 hover:bg-emerald-50"
+                    disabled={planningInitial || saving || !masterId}
+                    onClick={() => void handleInitialPlanClick()}
+                  >
+                    {planningInitial && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    初期計画を組む（月均等）
+                  </Button>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 pt-2 items-center">
                 <Button
                   type="button"
@@ -737,6 +825,8 @@ export default function MaintenanceMasterPage() {
         <code className="text-[11px] bg-slate-100 px-1 rounded">migration_checklist_templates.sql</code>
         {' / '}
         <code className="text-[11px] bg-slate-100 px-1 rounded">migration_inspection_interval.sql</code>
+        {' / '}
+        <code className="text-[11px] bg-slate-100 px-1 rounded">migration_master_type.sql</code>
         を実行してください。
       </p>
     </div>

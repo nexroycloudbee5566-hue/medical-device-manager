@@ -254,7 +254,7 @@ function MaintenancePageContent() {
   }, [device?.id, fetchMasters])
 
   const masterForDevice = device
-    ? matchMasterForDevice(masters, device.manufacturer, device.model)
+    ? matchMasterForDevice(masters, device.manufacturer, device.model, 'periodic')
     : null
 
   useEffect(() => {
@@ -262,7 +262,7 @@ function MaintenancePageContent() {
       setChecklistResults({})
       return
     }
-    const m = matchMasterForDevice(masters, device.manufacturer, device.model)
+    const m = matchMasterForDevice(masters, device.manufacturer, device.model, 'periodic')
     setChecklistResults(defaultResultsForItems(m?.checklist_items ?? []))
   }, [device, masters])
 
@@ -469,7 +469,12 @@ function MaintenancePageContent() {
       )
       setNotes('')
       const freshMasters = await fetchMasters()
-      const m = matchMasterForDevice(freshMasters, deviceAfterSave.manufacturer, deviceAfterSave.model)
+      const m = matchMasterForDevice(
+        freshMasters,
+        deviceAfterSave.manufacturer,
+        deviceAfterSave.model,
+        'periodic',
+      )
       setChecklistResults(defaultResultsForItems(m?.checklist_items ?? []))
     } finally {
       setSaving(false)

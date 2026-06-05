@@ -1,9 +1,42 @@
 import type {
   MaintenanceChecklistItem,
   MaintenanceChecklistItemKind,
+  ChecklistItemFrequency,
   ChecklistResultEntry,
+  MaintenanceMasterType,
   MaintenanceModelMaster,
 } from '@/lib/types'
+
+export const CHECKLIST_FREQUENCY_LABEL: Record<ChecklistItemFrequency, string> = {
+  daily: '毎日',
+  periodic: '定期点検時',
+}
+
+function parseMasterType(raw: unknown): MaintenanceMasterType {
+  return raw === 'daily' ? 'daily' : 'periodic'
+}
+
+function parseFrequency(raw: unknown): ChecklistItemFrequency | undefined {
+  if (raw === 'daily' || raw === 'periodic') return raw
+  return undefined
+}
+
+export function normalizeMasterType(raw: unknown): MaintenanceMasterType {
+  return parseMasterType(raw)
+}
+
+export function filterMastersByType(
+  masters: MaintenanceModelMaster[],
+  masterType: MaintenanceMasterType,
+): MaintenanceModelMaster[] {
+  return masters.filter((m) => (m.master_type ?? 'periodic') === masterType)
+}
+
+/** ダッシュボード・年間計画用（日常点検マスタを除外） */
+export function filterPeriodicMasters(masters: MaintenanceModelMaster[]): MaintenanceModelMaster[] {
+  return filterMastersByType(masters, 'periodic')
+}
+
 export function mapMaintenanceModelMasterRow(r: Record<string, unknown>): MaintenanceModelMaster {
   const rawInterval = r.inspection_interval_months
   const n = typeof rawInterval === 'number' ? rawInterval : Number(rawInterval)
@@ -18,6 +51,7 @@ export function mapMaintenanceModelMasterRow(r: Record<string, unknown>): Mainte
     id: r.id as string,
     manufacturer: (r.manufacturer as string) ?? '',
     model: (r.model as string) ?? '',
+    master_type: parseMasterType(r.master_type),
     checklist_items: parseChecklistItems(r.checklist_items),
     maintenance_method,
     inspection_interval_months,
@@ -42,7 +76,7 @@ export function deviceHasInspectionMaster(
   masters: MaintenanceModelMaster[],
   dev: Pick<{ manufacturer?: string | null; model?: string | null }, 'manufacturer' | 'model'>,
 ): boolean {
-  const m = matchMasterForDevice(masters, dev.manufacturer, dev.model)
+  const m = matchMasterForDevice(masters, dev.manufacturer, dev.model, 'periodic')
   return m != null && m.checklist_items.length > 0
 }
 
@@ -50,20 +84,22 @@ export function matchMasterForDevice(
   masters: MaintenanceModelMaster[],
   manufacturer: string | null | undefined,
   model: string | null | undefined,
+  masterType: MaintenanceMasterType = 'periodic',
 ): MaintenanceModelMaster | null {
+  const scoped = filterMastersByType(masters, masterType)
   const m = normalizeModelKeyPart(manufacturer)
   const mo = normalizeModelKeyPart(model)
   if (!mo) return null
 
   const exact =
-    masters.find(
+    scoped.find(
       (x) =>
         normalizeModelKeyPart(x.manufacturer) === m &&
         normalizeModelKeyPart(x.model) === mo,
     ) ?? null
   if (exact) return exact
 
-  const byModel = masters.filter((x) => normalizeModelKeyPart(x.model) === mo)
+  const byModel = scoped.filter((x) => normalizeModelKeyPart(x.model) === mo)
   if (byModel.length === 1) return byModel[0]
 
   if (!m && byModel.length > 1) {
@@ -124,11 +160,13 @@ export function parseChecklistItems(raw: unknown): MaintenanceChecklistItem[] {
       const kind = parseKind((row as { kind?: unknown }).kind)
       const unitRaw = (row as { unit?: unknown }).unit
       const unit = typeof unitRaw === 'string' ? unitRaw.trim() || null : null
+      const frequency = parseFrequency((row as { frequency?: unknown }).frequency)
       out.push({
         key,
         label,
         kind,
         ...(kind === 'number' && unit ? { unit } : {}),
+        ...(frequency ? { frequency } : {}),
       })
     }
   }
@@ -144,6 +182,7 @@ export function serializeChecklistTemplate(items: MaintenanceChecklistItem[]): u
       kind: i.kind,
     }
     if (i.kind === 'number' && i.unit) base.unit = i.unit
+    if (i.frequency) base.frequency = i.frequency
     return base
   })
 }
@@ -159,6 +198,7 @@ export function cloneChecklistItemsFromTemplate(
       kind: item.kind,
     }
     if (item.kind === 'number' && item.unit) next.unit = item.unit
+    if (item.frequency) next.frequency = item.frequency
     return next
   })
 }

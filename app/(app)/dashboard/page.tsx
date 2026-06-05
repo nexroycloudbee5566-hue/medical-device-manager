@@ -18,7 +18,11 @@ import { RefreshCw, Wrench, ShoppingCart, Hammer, ChevronRight, CalendarClock, C
 import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { deviceHasInspectionMaster, mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
+import {
+  deviceHasInspectionMaster,
+  filterPeriodicMasters,
+  mapMaintenanceModelMasterRow,
+} from '@/lib/maintenance-master'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
 import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
 import {
@@ -118,8 +122,10 @@ export default function DashboardPage() {
       supabase.from('maintenance_model_masters').select('*'),
     ])
 
-    const masters = (mastersRaw ?? []).map((row) =>
-      mapMaintenanceModelMasterRow(row as Record<string, unknown>),
+    const masters = filterPeriodicMasters(
+      (mastersRaw ?? []).map((row) =>
+        mapMaintenanceModelMasterRow(row as Record<string, unknown>),
+      ),
     )
 
     const latestByDevice = new Map<string, string>()

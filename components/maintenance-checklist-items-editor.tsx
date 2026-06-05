@@ -12,10 +12,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Trash2 } from 'lucide-react'
+import type { ChecklistItemFrequency } from '@/lib/types'
 import {
   generateChecklistItemKey,
   CHECKLIST_KIND_LABEL,
+  CHECKLIST_FREQUENCY_LABEL,
 } from '@/lib/maintenance-master'
+
+const FREQUENCY_OPTIONS: ChecklistItemFrequency[] = ['daily', 'periodic']
 
 const ADDABLE_KINDS: MaintenanceChecklistItemKind[] = [
   'checkbox',
@@ -32,10 +36,15 @@ export function MaintenanceChecklistItemsEditor({
   items,
   onChange,
   emptyMessage = '項目がありません。上のメニューから種類を選んで追加してください。',
+  showItemFrequency = false,
+  defaultItemFrequency = 'daily',
 }: {
   items: MaintenanceChecklistItem[]
   onChange: (items: MaintenanceChecklistItem[]) => void
   emptyMessage?: string
+  /** 日常点検マスタ: 項目ごとに実施頻度（毎日など） */
+  showItemFrequency?: boolean
+  defaultItemFrequency?: ChecklistItemFrequency
 }) {
   function addItem(kind: MaintenanceChecklistItemKind) {
     onChange([
@@ -45,6 +54,7 @@ export function MaintenanceChecklistItemsEditor({
         label: kind === 'inspector' ? '点検者' : '',
         kind,
         ...(kind === 'number' ? { unit: '' } : {}),
+        ...(showItemFrequency ? { frequency: defaultItemFrequency } : {}),
       },
     ])
   }
@@ -143,6 +153,30 @@ export function MaintenanceChecklistItemsEditor({
                       placeholder="例: V、℃、h"
                       className="bg-white text-sm max-w-xs"
                     />
+                  </div>
+                )}
+                {showItemFrequency && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400">実施頻度</span>
+                    <Select
+                      value={row.frequency ?? defaultItemFrequency}
+                      onValueChange={(v) =>
+                        updateItem(row.key, {
+                          frequency: (v as ChecklistItemFrequency) ?? defaultItemFrequency,
+                        })
+                      }
+                    >
+                      <SelectTrigger className="bg-white text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FREQUENCY_OPTIONS.map((f) => (
+                          <SelectItem key={f} value={f}>
+                            {CHECKLIST_FREQUENCY_LABEL[f]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>

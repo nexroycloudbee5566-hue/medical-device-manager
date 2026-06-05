@@ -21,7 +21,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react'
-import { mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
+import { filterPeriodicMasters, mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
 import {
   buildAnnualPlanItems,
   groupPlanByMonth,
@@ -233,8 +233,10 @@ export default function AnnualMaintenancePage() {
     const records = recRes.data
     const mastersRaw = masRes.data
 
-    const masters = (mastersRaw ?? []).map((row) =>
-      mapMaintenanceModelMasterRow(row as Record<string, unknown>),
+    const masters = filterPeriodicMasters(
+      (mastersRaw ?? []).map((row) =>
+        mapMaintenanceModelMasterRow(row as Record<string, unknown>),
+      ),
     )
 
     const latestByDevice = new Map<string, string>()

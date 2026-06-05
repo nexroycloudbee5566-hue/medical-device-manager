@@ -31,7 +31,7 @@ export function getIntervalMonthsForDevice(
   manufacturer: string | null | undefined,
   model: string | null | undefined,
 ): number {
-  const m = matchMasterForDevice(masters, manufacturer, model)
+  const m = matchMasterForDevice(masters, manufacturer, model, 'periodic')
   return normalizeIntervalMonths(m?.inspection_interval_months)
 }
 

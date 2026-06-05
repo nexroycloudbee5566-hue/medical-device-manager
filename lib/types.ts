@@ -135,12 +135,25 @@ export type MaintenanceChecklistItemKind =
   /** 旧データ互換: 適・不適・対象外 */
   | 'legacy_okng'
 
+/** 点検項目の実施頻度（日常点検マスタ用） */
+export type ChecklistItemFrequency = 'daily' | 'periodic'
+
 export interface MaintenanceChecklistItem {
   key: string
   label: string
   kind: MaintenanceChecklistItemKind
   /** kind が number のとき表示・記録用の単位（例: V, ℃） */
   unit?: string | null
+  /** 日常点検マスタ: 毎日 / 定期点検時 */
+  frequency?: ChecklistItemFrequency | null
+}
+
+/** メンテナンスマスタ種別 */
+export type MaintenanceMasterType = 'periodic' | 'daily'
+
+export const MAINTENANCE_MASTER_TYPE_LABEL: Record<MaintenanceMasterType, string> = {
+  periodic: '定期点検',
+  daily: '日常点検',
 }
 
 /** 点検記録に保存する各項目の値 */
@@ -154,11 +167,13 @@ export type ChecklistResultEntry =
   | { mode: 'remarks'; value: string }
   | { mode: 'inspector'; value: string }
 
-/** メーカー＋型式に紐づく定期点検チェック項目マスタ */
+/** メーカー＋型式に紐づく点検チェック項目マスタ */
 export interface MaintenanceModelMaster {
   id: string
   manufacturer: string
   model: string
+  /** periodic=定期点検（ダッシュボード・年間計画対象） / daily=日常点検 */
+  master_type: MaintenanceMasterType
   checklist_items: MaintenanceChecklistItem[]
   /** 型式ごとのメンテナンス方法・手順（自由記述） */
   maintenance_method: string | null
@@ -172,6 +187,7 @@ export interface MaintenanceModelMaster {
 export interface MaintenanceChecklistTemplate {
   id: string
   name: string
+  master_type: MaintenanceMasterType
   checklist_items: MaintenanceChecklistItem[]
   created_at: string
   updated_at: string
