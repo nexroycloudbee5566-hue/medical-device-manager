@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Request, RequestLog, getStatusList, REQUEST_TYPE_LABEL } from '@/lib/types'
+import { Request, getStatusList, REQUEST_TYPE_LABEL } from '@/lib/types'
 import {
   coerceEstimateAmount,
   estimatesAmountEqual,
@@ -31,6 +31,8 @@ import {
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { Loader2, History, Trash2 } from 'lucide-react'
+import { RequestStatusHistory } from '@/components/requests/request-status-history'
+import { fetchRequestLogs, mergeRegistrationNotes } from '@/lib/request-logs'
 
 interface Props {
   request: Request
@@ -45,7 +47,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
   const [notes, setNotes] = useState('')
   const [estimateAmount, setEstimateAmount] = useState('')
   const [handledByName, setHandledByName] = useState('')
-  const [logs, setLogs] = useState<(RequestLog & { profiles?: { name: string } | null })[]>([])
+  const [logs, setLogs] = useState<Awaited<ReturnType<typeof fetchRequestLogs>>>([])
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -66,13 +68,10 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
         setHandledByName(data?.name?.trim() ? data.name : '')
       })
     })
-    supabase
-      .from('request_logs')
-      .select('*, profiles(name)')
-      .eq('request_id', request.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setLogs((data as any[]) ?? []))
-  }, [open, request.id, request.status, request.estimate_amount, supabase])
+    void fetchRequestLogs(supabase, request.id).then((rows) => {
+      setLogs(mergeRegistrationNotes(rows, request.notes))
+    })
+  }, [open, request.id, request.status, request.estimate_amount, request.notes, supabase])
 
   const parsedEstimate = parseEstimateInput(estimateAmount)
   const atEstimateStatus = newStatus === '見積受取'
@@ -109,14 +108,19 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           const extra = `見積金額 ${formatYen(parsedEstimate)}`
           logNotes = logNotes ? `${extra}／${logNotes}` : extra
         }
-        await supabase.from('request_logs').insert({
+        const { error: logError } = await supabase.from('request_logs').insert({
           request_id: request.id,
           from_status: request.status,
           to_status: newStatus,
-          changed_by: user?.id,
+          changed_by: user?.id ?? null,
           handled_by_name: actor,
           notes: logNotes,
         })
+        if (logError) {
+          console.error('[依頼] 履歴登録エラー:', logError)
+          alert(`履歴の記録に失敗しました: ${logError.message}`)
+          return
+        }
 
         const updatePayload: {
           status: string
@@ -129,29 +133,49 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
         if (newStatus === '見積受取' && parsedEstimate !== null) {
           updatePayload.estimate_amount = parsedEstimate
         }
-        await supabase.from('requests').update(updatePayload).eq('id', request.id)
+        const { error: updateError } = await supabase
+          .from('requests')
+          .update(updatePayload)
+          .eq('id', request.id)
+        if (updateError) {
+          console.error('[依頼] ステータス更新エラー:', updateError)
+          alert(`ステータス更新に失敗しました: ${updateError.message}`)
+          return
+        }
       } else if (amountOnlyUpdate && parsedEstimate !== null) {
         const prev =
           storedEstimate !== null ? formatYen(storedEstimate) : '（未登録）'
         const next = formatYen(parsedEstimate)
         const noteParts = [`見積金額を ${prev} → ${next} に更新`, notes.trim()].filter(Boolean)
-        await supabase.from('request_logs').insert({
+        const { error: logError } = await supabase.from('request_logs').insert({
           request_id: request.id,
           from_status: request.status,
           to_status: request.status,
-          changed_by: user?.id,
+          changed_by: user?.id ?? null,
           handled_by_name: actor,
           notes: noteParts.join('／') || null,
         })
-        await supabase
+        if (logError) {
+          console.error('[依頼] 履歴登録エラー:', logError)
+          alert(`履歴の記録に失敗しました: ${logError.message}`)
+          return
+        }
+        const { error: updateError } = await supabase
           .from('requests')
           .update({
             estimate_amount: parsedEstimate,
             updated_at: new Date().toISOString(),
           })
           .eq('id', request.id)
+        if (updateError) {
+          console.error('[依頼] 見積更新エラー:', updateError)
+          alert(`見積金額の更新に失敗しました: ${updateError.message}`)
+          return
+        }
       }
 
+      const freshLogs = await fetchRequestLogs(supabase, request.id)
+      setLogs(mergeRegistrationNotes(freshLogs, request.notes))
       onUpdated()
     } finally {
       setLoading(false)
@@ -215,7 +239,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="handled-by">対応者（記名）*</Label>
+            <Label htmlFor="handled-by">進行担当者（記名）*</Label>
             <Input
               id="handled-by"
               value={handledByName}
@@ -223,10 +247,10 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
               placeholder="この操作を行ったCEの氏名"
             />
             <p className="text-xs text-slate-500">
-              ステータスを進める／見積金額を更新するときは必ず入力してください。
+              ステータスを進める／見積金額を更新するときは必ず入力してください。履歴に記録されます。
             </p>
             {!handledOk && (statusChanged || amountOnlyUpdate) && (
-              <p className="text-xs text-red-600">対応者（記名）を入力してください。</p>
+              <p className="text-xs text-red-600">進行担当者（記名）を入力してください。</p>
             )}
           </div>
 
@@ -268,43 +292,24 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="log-notes">メモ（任意）</Label>
+            <Label htmlFor="log-notes">備考（任意）</Label>
             <Textarea
               id="log-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="変更理由や補足事項"
-              rows={2}
+              placeholder="このステップの補足・連絡事項など"
+              rows={3}
             />
+            <p className="text-xs text-slate-500">入力した内容は進行履歴に記録されます。</p>
           </div>
 
-          {/* Logs */}
           {logs.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
                 <History className="h-4 w-4" />
-                変更履歴
+                進行履歴
               </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {logs.map((log) => (
-                  <div key={log.id} className="flex gap-3 text-xs text-slate-500">
-                    <span className="text-slate-400 whitespace-nowrap">
-                      {format(new Date(log.created_at), 'M/d HH:mm', { locale: ja })}
-                    </span>
-                    <span>
-                      {log.from_status ? `${log.from_status} → ` : ''}
-                      <span className="font-medium text-slate-700">{log.to_status}</span>
-                      {(log.handled_by_name?.trim() || log.profiles?.name) && (
-                        <span className="text-slate-600">
-                          {' '}
-                          [対応: {log.handled_by_name?.trim() || log.profiles?.name}]
-                        </span>
-                      )}
-                      {log.notes && ` — ${log.notes}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <RequestStatusHistory logs={logs} />
             </div>
           )}
         </div>

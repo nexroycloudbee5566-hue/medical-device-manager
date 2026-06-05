@@ -4,6 +4,7 @@ alter table requests
   add column if not exists reception_ce_name text;
 
 alter table request_logs
+  add column if not exists notes text,
   add column if not exists handled_by_name text;
 
 notify pgrst, 'reload schema';

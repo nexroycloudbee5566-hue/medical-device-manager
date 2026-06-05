@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Device, RequestType } from '@/lib/types'
+import { Device, RequestType, REQUEST_TYPE_LABEL } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,13 +22,22 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Loader2, Barcode } from 'lucide-react'
-
 interface Props {
   open: boolean
   onClose: () => void
   onCreated: () => void
   /** 指定時は依頼種別を固定（修理／購入の各画面から開くとき） */
   fixedType?: RequestType
+}
+
+function insertErrorHint(message: string): string {
+  if (message.includes('reception_ce_name') || message.includes('requested_equipment')) {
+    return (
+      `${message}\n\n` +
+      'Supabase で migration_request_reception_fields.sql を実行してください。'
+    )
+  }
+  return message
 }
 
 export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props) {
@@ -83,8 +92,7 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
     setRequestedEquipment('')
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSubmit() {
     const effectiveType = fixedType ?? type
     const recv = receptionCeName.trim()
     const equip = requestedEquipment.trim()
@@ -118,37 +126,58 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
     }
 
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
 
-    const { data: request, error } = await supabase.from('requests').insert({
-      type: effectiveType,
-      status: '依頼受付',
-      hospital_id: null,
-      device_id: effectiveType === 'repair' ? (selectedRepairDevice?.id ?? null) : null,
-      requested_equipment: equip,
-      reception_ce_name: recv,
-      requester_name: name,
-      requester_dept: dept,
-      description: desc,
-      notes: notes.trim() || null,
-      created_by: user?.id,
-    }).select().single()
+      const { data: request, error } = await supabase
+        .from('requests')
+        .insert({
+          type: effectiveType,
+          status: '依頼受付',
+          hospital_id: null,
+          device_id: effectiveType === 'repair' ? (selectedRepairDevice?.id ?? null) : null,
+          requested_equipment: equip,
+          reception_ce_name: recv,
+          requester_name: name,
+          requester_dept: dept,
+          description: desc,
+          notes: notes.trim() || null,
+          created_by: user?.id ?? null,
+        })
+        .select('id')
+        .single()
 
-    if (!error && request) {
-      await supabase.from('request_logs').insert({
+      if (error || !request) {
+        console.error('[依頼登録] エラー:', error)
+        alert(`登録に失敗しました: ${insertErrorHint(error?.message ?? '不明なエラー')}`)
+        return
+      }
+
+      const { error: logError } = await supabase.from('request_logs').insert({
         request_id: request.id,
         from_status: null,
         to_status: '依頼受付',
-        changed_by: user?.id,
+        changed_by: user?.id ?? null,
         handled_by_name: recv,
+        notes: notes.trim() || null,
       })
-    }
 
-    setLoading(false)
-    if (!error) {
+      if (logError) {
+        console.error('[依頼登録] 履歴エラー:', logError)
+        alert(
+          '依頼は登録されましたが、変更履歴の記録に失敗しました。\n' +
+            '一覧に表示されない場合はページを更新してください。',
+        )
+      }
+
       onCreated()
       onClose()
       resetForm()
+    } catch (err) {
+      console.error('[依頼登録] 例外:', err)
+      alert('登録中にエラーが発生しました。ページを更新して再度お試しください。')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -170,9 +199,11 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); resetForm() } }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>新規依頼登録</DialogTitle>
+          <DialogTitle>
+            {fixedType ? `${REQUEST_TYPE_LABEL[fixedType]} — 新規登録` : '新規依頼登録'}
+          </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+        <div className="space-y-4 py-2">
           {!fixedType && (
             <div className="space-y-1.5">
               <Label>依頼種別 *</Label>
@@ -195,7 +226,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
               value={receptionCeName}
               onChange={(e) => setReceptionCeName(e.target.value)}
               placeholder="受付したCEの氏名"
-              required
             />
           </div>
 
@@ -258,7 +288,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
                   : 'バーコードで選択すると自動入力されます。必要に応じて編集してください。'
               }
               rows={effectiveType === 'purchase' ? 3 : 2}
-              required
             />
           </div>
 
@@ -270,7 +299,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
                 value={requesterName}
                 onChange={(e) => setRequesterName(e.target.value)}
                 placeholder="山田 太郎"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -280,7 +308,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
                 value={requesterDept}
                 onChange={(e) => setRequesterDept(e.target.value)}
                 placeholder="循環器内科"
-                required
               />
             </div>
           </div>
@@ -293,7 +320,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
               onChange={(e) => setDescription(e.target.value)}
               placeholder="依頼の詳細を入力してください"
               rows={3}
-              required
             />
           </div>
 
@@ -312,12 +338,12 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
             <Button type="button" variant="outline" onClick={() => { onClose(); resetForm() }}>
               キャンセル
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="button" onClick={() => void handleSubmit()} disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               登録する
             </Button>
           </DialogFooter>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   )

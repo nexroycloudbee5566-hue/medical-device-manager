@@ -48,12 +48,18 @@ export function RequestsTypePage({ requestType }: { requestType: RequestType }) 
   const Icon = m.icon
 
   const fetchRequests = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('requests')
       .select('*, devices(name, barcode)')
       .eq('type', requestType)
       .neq('status', '完了')
       .order('created_at', { ascending: false })
+    if (error) {
+      console.error(`[${requestType}依頼] 取得エラー:`, error)
+      alert(`依頼一覧の取得に失敗しました: ${error.message}`)
+      setLoading(false)
+      return
+    }
     setRequests((data as Request[]) ?? [])
     setLoading(false)
   }, [supabase, requestType])

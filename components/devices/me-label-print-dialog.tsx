@@ -78,6 +78,7 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
     savePtouchSettings(settings)
     setBusy(true)
     try {
+      let modelNameMissCount = 0
       for (const row of rows) {
         for (let c = 0; c < copies; c++) {
           const result = await printMeLabelViaBpac({
@@ -93,9 +94,19 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
             await refreshBpacStatus()
             return
           }
+          if (!result.modelNameSet && row.deviceName) {
+            modelNameMissCount += 1
+          }
         }
       }
-      alert(`${rows.length} 件 × ${copies} 枚を P-touch に送信しました。`)
+      let message = `${rows.length} 件 × ${copies} 枚を P-touch に送信しました。`
+      if (modelNameMissCount > 0) {
+        message +=
+          `\n\n機種名をテンプレートに設定できなかった印刷が ${modelNameMissCount} 件あります。` +
+          '\nP-touch Editor でテキストオブジェクトを追加し、オブジェクト名を「P-touch 設定」の機種名テキストに合わせてください。' +
+          '\n（テキスト1 などの名前でも、テンプレート内の最初のテキストに自動設定を試みます）'
+      }
+      alert(message)
     } finally {
       setBusy(false)
     }

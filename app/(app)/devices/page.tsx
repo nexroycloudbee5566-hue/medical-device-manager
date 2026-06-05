@@ -47,6 +47,7 @@ import {
   Download,
   Copy,
   Printer,
+  Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { downloadCsv, csvFilename } from '@/lib/csv-export'
@@ -156,6 +157,7 @@ export default function DevicesPage() {
   const [duplicateFrom, setDuplicateFrom] = useState<Device | null>(null)
   const [form, setForm] = useState(emptyDevice)
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [labelPrintOpen, setLabelPrintOpen] = useState(false)
   const [labelPrintTargets, setLabelPrintTargets] = useState<MeLabelPrintTarget[]>([])
 
@@ -422,6 +424,50 @@ export default function DevicesPage() {
     setForm(deviceToForm(device))
     setEditDevice(device)
     setNewDeviceOpen(false)
+  }
+
+  function deviceDeleteLabel(device: Device): string {
+    return device.barcode ? `${device.barcode}（${device.name}）` : device.name
+  }
+
+  async function handleDeleteDevice(device: Device) {
+    if (
+      !confirm(
+        `この機器を台帳から削除しますか？\n${deviceDeleteLabel(device)}\n\n点検記録も削除されます。修理依頼との紐づけは解除されます。取り消せません。`,
+      )
+    ) {
+      return
+    }
+
+    setDeletingId(device.id)
+    try {
+      const { error: unlinkError } = await supabase
+        .from('requests')
+        .update({ device_id: null })
+        .eq('device_id', device.id)
+      if (unlinkError) {
+        console.error('[機器台帳] 依頼紐づけ解除エラー:', unlinkError)
+        alert(`削除に失敗しました: ${unlinkError.message}`)
+        return
+      }
+
+      const { error } = await supabase.from('devices').delete().eq('id', device.id)
+      if (error) {
+        console.error('[機器台帳] 削除エラー:', error)
+        alert(`削除に失敗しました: ${error.message}`)
+        return
+      }
+
+      if (editDevice?.id === device.id) {
+        setEditDevice(null)
+        setNewDeviceOpen(false)
+        setDuplicateFrom(null)
+        setForm(emptyDevice)
+      }
+      await fetchDevices()
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   function openDuplicate(device: Device) {
@@ -702,6 +748,21 @@ export default function DevicesPage() {
                       >
                         <Printer className="h-4 w-4 text-slate-400" />
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void handleDeleteDevice(device)}
+                        className="h-8 w-8 p-0"
+                        title="削除"
+                        aria-label="削除"
+                        disabled={deletingId === device.id}
+                      >
+                        {deletingId === device.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 text-slate-400" />
+                        )}
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -742,6 +803,7 @@ export default function DevicesPage() {
           )}
           <DeviceForm
             form={form}
+            locationOptions={locationOptions}
             onChange={(key, val) => setForm((f) => ({ ...f, [key]: val }))}
           />
           <p className="text-xs text-slate-500 pt-1">
@@ -769,22 +831,40 @@ export default function DevicesPage() {
             </button>
             （要セットアップ: docs/ptouch-setup.md）。
           </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setEditDevice(null)
-                setNewDeviceOpen(false)
-                setDuplicateFrom(null)
-                setForm(emptyDevice)
-              }}
-            >
-              キャンセル
-            </Button>
-            <Button onClick={handleSave} disabled={saving || !form.name}>
-              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {editDevice ? '保存する' : '登録する'}
-            </Button>
+          <DialogFooter
+            className={cn(
+              'flex-col-reverse gap-2 sm:flex-row',
+              editDevice ? 'sm:justify-between' : 'sm:justify-end',
+            )}
+          >
+            {editDevice && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void handleDeleteDevice(editDevice)}
+                disabled={saving || deletingId === editDevice.id}
+              >
+                {deletingId === editDevice.id && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                削除する
+              </Button>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditDevice(null)
+                  setNewDeviceOpen(false)
+                  setDuplicateFrom(null)
+                  setForm(emptyDevice)
+                }}
+              >
+                キャンセル
+              </Button>
+              <Button onClick={handleSave} disabled={saving || !form.name || deletingId != null}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                {editDevice ? '保存する' : '登録する'}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -869,13 +949,25 @@ function deviceToFormForDuplicate(device: Device): typeof emptyDevice {
   }
 }
 
+const LOCATION_UNSET = '__unset__'
+
 function DeviceForm({
   form,
+  locationOptions,
   onChange,
 }: {
   form: typeof emptyDevice
+  locationOptions: string[]
   onChange: (key: string, val: string) => void
 }) {
+  const formLocationOptions = useMemo(() => {
+    const current = form.location.trim()
+    if (current && !locationOptions.includes(current)) {
+      return uniqueSorted([...locationOptions, current])
+    }
+    return locationOptions
+  }, [locationOptions, form.location])
+
   return (
     <div className="grid grid-cols-2 gap-4 py-2">
       <div className="space-y-1.5">
@@ -884,7 +976,28 @@ function DeviceForm({
       </div>
       <div className="space-y-1.5">
         <Label>設置場所</Label>
-        <Input value={form.location} onChange={(e) => onChange('location', e.target.value)} placeholder="2F東" />
+        <Select
+          value={form.location.trim() || LOCATION_UNSET}
+          onValueChange={(v) => onChange('location', v === LOCATION_UNSET ? '' : (v ?? ''))}
+          disabled={formLocationOptions.length === 0}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="設置場所を選択" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={LOCATION_UNSET}>未選択</SelectItem>
+            {formLocationOptions.map((loc) => (
+              <SelectItem key={loc} value={loc}>
+                {loc}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {formLocationOptions.length === 0 && (
+          <p className="text-xs text-amber-800">
+            登録済みの設置場所がありません。Excel 取込などで先に設置場所を登録してください。
+          </p>
+        )}
       </div>
       <div className="space-y-1.5">
         <Label>機器区分</Label>

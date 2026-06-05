@@ -70,8 +70,55 @@ export async function bpfacGetObjectPointer(name: string): Promise<number | null
   return typeof d.p === 'number' && d.p >= 0 ? d.p : null
 }
 
-export async function bpfacSetObjectText(pointer: number, text: string): Promise<void> {
-  await bpfacSend({ method: 'IObject::SetText', p: pointer, text })
+/** 公式 bpac.js と同様（IObject::SetText は応答イベントがない） */
+export function bpfacSetObjectTextFire(pointer: number, text: string): void {
+  document.dispatchEvent(
+    new CustomEvent('bpac_send', {
+      detail: { method: 'IObject::SetText', p: pointer, text },
+    }),
+  )
+}
+
+export const BPAC_OBJECT_TYPE_TEXT = 0
+export const BPAC_OBJECT_TYPE_BARCODE = 1
+
+export async function bpfacGetObjectsCollectionPointer(): Promise<number | null> {
+  const d = await bpfacSend({ method: 'IDocument::GetObjects', name: '' })
+  if (d.ret === false || typeof d.p !== 'number' || d.p < 0) return null
+  return d.p
+}
+
+export async function bpfacObjectsGetCount(objectsPointer: number): Promise<number> {
+  const d = await bpfacSend({ method: 'IObjects::GetCount', p: objectsPointer })
+  if (d.ret === false || typeof d.count !== 'number') return 0
+  return d.count
+}
+
+export async function bpfacObjectsGetItemPointer(
+  objectsPointer: number,
+  index: number,
+): Promise<number | null> {
+  const d = await bpfacSend({ method: 'IObjects::GetItem', p: objectsPointer, index })
+  if (d.ret === false || typeof d.p !== 'number' || d.p < 0) return null
+  return d.p
+}
+
+export async function bpfacObjectGetType(objectPointer: number): Promise<number | null> {
+  const d = await bpfacSend({ method: 'IObject::GetType', p: objectPointer })
+  if (d.ret === false || typeof d.type !== 'number') return null
+  return d.type
+}
+
+export async function bpfacObjectGetName(objectPointer: number): Promise<string | null> {
+  const d = await bpfacSend({ method: 'IObject::GetName', p: objectPointer })
+  if (d.ret === false || typeof d.name !== 'string') return null
+  return d.name
+}
+
+export async function bpfacGetTextLineCount(): Promise<number> {
+  const d = await bpfacSend({ method: 'IDocument::GetTextCount' })
+  if (d.ret === false || typeof d.count !== 'number') return 0
+  return d.count
 }
 
 export async function bpfacStartPrint(docName = '', option = 0): Promise<void> {

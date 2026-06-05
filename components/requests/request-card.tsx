@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Request, getStatusList, getNextStatus, REQUEST_TYPE_LABEL } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,9 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { RequestStatusHistory } from '@/components/requests/request-status-history'
+import { fetchRequestLogs, mergeRegistrationNotes } from '@/lib/request-logs'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +30,7 @@ import {
   ChevronRight,
   Banknote,
   Cpu,
+  History,
 } from 'lucide-react'
 import { coerceEstimateAmount, formatYen } from '@/lib/estimate-amount'
 
@@ -57,10 +61,22 @@ export function RequestCard({
   const [advanceOpen, setAdvanceOpen] = useState(false)
   const [pendingNext, setPendingNext] = useState<string | null>(null)
   const [handledByName, setHandledByName] = useState('')
+  const [advanceNotes, setAdvanceNotes] = useState('')
+  const [logs, setLogs] = useState<Awaited<ReturnType<typeof fetchRequestLogs>>>([])
   const nextStatus = getNextStatus(request.type, request.status)
+
+  const loadLogs = useCallback(async () => {
+    const rows = await fetchRequestLogs(supabase, request.id)
+    setLogs(mergeRegistrationNotes(rows, request.notes))
+  }, [request.id, request.notes, supabase])
+
+  useEffect(() => {
+    void loadLogs()
+  }, [loadLogs, request.status, request.updated_at])
 
   useEffect(() => {
     if (!advanceOpen) return
+    setAdvanceNotes('')
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('name').eq('id', user.id).maybeSingle().then(({ data }) => {
@@ -74,6 +90,12 @@ export function RequestCard({
     setAdvanceOpen(true)
   }
 
+  function closeAdvanceDialog() {
+    setAdvanceOpen(false)
+    setPendingNext(null)
+    setAdvanceNotes('')
+  }
+
   async function confirmAdvance() {
     const next = pendingNext
     if (!next) return
@@ -85,19 +107,30 @@ export function RequestCard({
     setUpdating(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from('request_logs').insert({
+      const { error: logError } = await supabase.from('request_logs').insert({
         request_id: request.id,
         from_status: request.status,
         to_status: next,
-        changed_by: user?.id,
+        changed_by: user?.id ?? null,
         handled_by_name: actor,
+        notes: advanceNotes.trim() || null,
       })
-      await supabase
+      if (logError) {
+        console.error('[依頼] 履歴登録エラー:', logError)
+        alert(`ステータス更新に失敗しました: ${logError.message}`)
+        return
+      }
+      const { error: updateError } = await supabase
         .from('requests')
         .update({ status: next, updated_at: new Date().toISOString() })
         .eq('id', request.id)
-      setAdvanceOpen(false)
-      setPendingNext(null)
+      if (updateError) {
+        console.error('[依頼] ステータス更新エラー:', updateError)
+        alert(`ステータス更新に失敗しました: ${updateError.message}`)
+        return
+      }
+      closeAdvanceDialog()
+      await loadLogs()
       onStatusUpdate()
     } finally {
       setUpdating(false)
@@ -200,6 +233,16 @@ export function RequestCard({
             )}
           </div>
 
+          {logs.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                <History className="h-3.5 w-3.5" />
+                進行履歴
+              </div>
+              <RequestStatusHistory logs={logs} compact maxHeight="max-h-36" />
+            </div>
+          )}
+
           {nextStatus && nextStatus !== '完了' && (
             <div className="flex justify-end pt-1">
               <Button
@@ -241,10 +284,7 @@ export function RequestCard({
       <Dialog
         open={advanceOpen}
         onOpenChange={(v) => {
-          if (!v) {
-            setAdvanceOpen(false)
-            setPendingNext(null)
-          }
+          if (!v) closeAdvanceDialog()
         }}
       >
         <DialogContent className="max-w-md">
@@ -258,7 +298,7 @@ export function RequestCard({
               <span className="font-medium text-blue-700">{pendingNext}</span>
             </p>
             <div className="space-y-1.5">
-              <Label htmlFor="advance-handled-by">対応者（記名）*</Label>
+              <Label htmlFor="advance-handled-by">進行担当者（記名）*</Label>
               <Input
                 id="advance-handled-by"
                 value={handledByName}
@@ -266,9 +306,20 @@ export function RequestCard({
                 placeholder="このステップを進めたCEの氏名"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="advance-notes">備考（任意）</Label>
+              <Textarea
+                id="advance-notes"
+                value={advanceNotes}
+                onChange={(e) => setAdvanceNotes(e.target.value)}
+                placeholder="このステップの補足・連絡事項など"
+                rows={3}
+              />
+              <p className="text-xs text-slate-500">入力した内容は進行履歴に記録されます。</p>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" type="button" onClick={() => { setAdvanceOpen(false); setPendingNext(null) }}>
+            <Button variant="outline" type="button" onClick={closeAdvanceDialog}>
               キャンセル
             </Button>
             <Button type="button" onClick={confirmAdvance} disabled={updating}>

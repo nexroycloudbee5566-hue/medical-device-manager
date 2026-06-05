@@ -1,13 +1,20 @@
 import {
+  BPAC_OBJECT_TYPE_TEXT,
   bpfacCloseTemplate,
   bpfacEndPrint,
   bpfacGetBarcodeIndex,
   bpfacGetObjectPointer,
+  bpfacGetObjectsCollectionPointer,
   bpfacGetTextIndex,
+  bpfacGetTextLineCount,
+  bpfacObjectGetName,
+  bpfacObjectGetType,
+  bpfacObjectsGetCount,
+  bpfacObjectsGetItemPointer,
   bpfacOpenTemplate,
   bpfacPrintOut,
   bpfacSetBarcodeData,
-  bpfacSetObjectText,
+  bpfacSetObjectTextFire,
   bpfacSetText,
   bpfacStartPrint,
 } from '@/lib/ptouch/bpac-bridge'
@@ -39,30 +46,128 @@ export type BpacPrintInput = {
   nameObjectName: string
 }
 
-const MODEL_NAME_OBJECT_FALLBACKS = ['txtName', 'objName', 'Text', 'Text1'] as const
+export type BpacPrintResult =
+  | { ok: true; modelNameSet: boolean; textObjectName?: string }
+  | { ok: false; error: string }
 
-async function setTemplateModelName(objectNames: string[], modelName: string): Promise<boolean> {
-  const text = modelName.trim()
-  if (!text) return false
+const MODEL_NAME_OBJECT_FALLBACKS = [
+  'txtName',
+  'objName',
+  'Text',
+  'Text1',
+  'テキスト1',
+  'テキスト2',
+] as const
 
+function uniqueNames(names: string[]): string[] {
+  return names.filter((name, index, arr) => name && arr.indexOf(name) === index)
+}
+
+function namesMatch(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase()
+}
+
+async function trySetTextOnObject(
+  objectPointer: number,
+  modelName: string,
+): Promise<void> {
+  bpfacSetObjectTextFire(objectPointer, modelName)
+  await new Promise((resolve) => setTimeout(resolve, 30))
+}
+
+async function setModelNameByObjectName(
+  objectNames: string[],
+  modelName: string,
+): Promise<{ set: boolean; textObjectName?: string }> {
   for (const name of objectNames) {
     const key = name.trim()
     if (!key) continue
 
     const textIndex = await bpfacGetTextIndex(key)
     if (textIndex != null) {
-      await bpfacSetText(textIndex, text)
-      return true
+      await bpfacSetText(textIndex, modelName)
+      return { set: true, textObjectName: key }
     }
 
     const ptr = await bpfacGetObjectPointer(key)
     if (ptr != null) {
-      await bpfacSetObjectText(ptr, text)
-      return true
+      await trySetTextOnObject(ptr, modelName)
+      return { set: true, textObjectName: key }
     }
   }
 
-  return false
+  return { set: false }
+}
+
+async function setModelNameOnFirstTextObject(
+  modelName: string,
+  barcodeObjectName: string,
+  preferredNames: string[],
+): Promise<{ set: boolean; textObjectName?: string }> {
+  const objectsPtr = await bpfacGetObjectsCollectionPointer()
+  if (objectsPtr == null) return { set: false }
+
+  const count = await bpfacObjectsGetCount(objectsPtr)
+  const textObjects: { pointer: number; name: string }[] = []
+
+  for (let i = 0; i < count; i++) {
+    const ptr = await bpfacObjectsGetItemPointer(objectsPtr, i)
+    if (ptr == null) continue
+
+    const type = await bpfacObjectGetType(ptr)
+    if (type !== BPAC_OBJECT_TYPE_TEXT) continue
+
+    const name = (await bpfacObjectGetName(ptr)) ?? ''
+    if (name && namesMatch(name, barcodeObjectName)) continue
+
+    textObjects.push({ pointer: ptr, name })
+  }
+
+  for (const preferred of preferredNames) {
+    const key = preferred.trim()
+    if (!key) continue
+    const hit = textObjects.find((obj) => namesMatch(obj.name, key))
+    if (hit) {
+      await trySetTextOnObject(hit.pointer, modelName)
+      return { set: true, textObjectName: hit.name }
+    }
+  }
+
+  if (textObjects.length > 0) {
+    const first = textObjects[0]
+    await trySetTextOnObject(first.pointer, modelName)
+    return { set: true, textObjectName: first.name || '(無名テキスト)' }
+  }
+
+  return { set: false }
+}
+
+async function setModelNameOnTextLines(modelName: string): Promise<boolean> {
+  const lineCount = await bpfacGetTextLineCount()
+  if (lineCount <= 0) return false
+
+  await bpfacSetText(0, modelName)
+  return true
+}
+
+async function setTemplateModelName(
+  objectNames: string[],
+  modelName: string,
+  barcodeObjectName: string,
+): Promise<{ set: boolean; textObjectName?: string }> {
+  const text = modelName.trim()
+  if (!text) return { set: false }
+
+  const byName = await setModelNameByObjectName(objectNames, text)
+  if (byName.set) return byName
+
+  const byScan = await setModelNameOnFirstTextObject(text, barcodeObjectName, objectNames)
+  if (byScan.set) return byScan
+
+  const byLine = await setModelNameOnTextLines(text)
+  if (byLine) return { set: true, textObjectName: 'テキスト行0' }
+
+  return { set: false }
 }
 
 async function openTemplateWithVariants(paths: string[]): Promise<string | null> {
@@ -76,7 +181,7 @@ async function openTemplateWithVariants(paths: string[]): Promise<string | null>
 
 export async function printMeLabelViaBpac(
   input: BpacPrintInput,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<BpacPrintResult> {
   const ready = await waitForBpacExtension()
   if (!ready) {
     const { browserHint } = getBpacDetectStatus()
@@ -103,6 +208,8 @@ export async function printMeLabelViaBpac(
 
   const paths = lbxPathVariants(rawPath)
   let openedPath: string | null = null
+  let modelNameSet = false
+  let textObjectName: string | undefined
 
   try {
     openedPath = await openTemplateWithVariants(paths)
@@ -130,7 +237,7 @@ export async function printMeLabelViaBpac(
     } else {
       const ptr = await bpfacGetObjectPointer(barcodeName)
       if (ptr != null) {
-        await bpfacSetObjectText(ptr, meNo)
+        await trySetTextOnObject(ptr, meNo)
       } else {
         return {
           ok: false,
@@ -141,18 +248,22 @@ export async function printMeLabelViaBpac(
 
     const modelName = input.deviceName?.trim()
     if (modelName) {
-      const objectNames = [
+      const objectNames = uniqueNames([
         input.nameObjectName.trim(),
         ...MODEL_NAME_OBJECT_FALLBACKS,
-      ].filter((name, index, arr) => name && arr.indexOf(name) === index)
-      await setTemplateModelName(objectNames, modelName)
+      ])
+      const result = await setTemplateModelName(objectNames, modelName, barcodeName)
+      modelNameSet = result.set
+      textObjectName = result.textObjectName
+    } else {
+      modelNameSet = true
     }
 
     await bpfacStartPrint('', 0)
     await bpfacPrintOut(Math.max(1, input.copies ?? 1), 0)
     await bpfacEndPrint()
 
-    return { ok: true }
+    return { ok: true, modelNameSet, textObjectName }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes("Can't connect to b-PAC")) {

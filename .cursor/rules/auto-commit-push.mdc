@@ -1,0 +1,28 @@
+---
+description: 実装完了後に変更を自動で commit / push する
+alwaysApply: true
+---
+
+# 自動 commit / push
+
+コードやドキュメントを変更したタスクを完了したら、**毎回**次を実行する（ユーザーが「コミットしないで」と明示しない限り）。
+
+## 手順
+
+1. `git status` と `git diff` で変更内容を確認する
+2. 秘密情報（`.env`、キー、認証情報）を含むファイルは commit しない
+3. 関連ファイルを `git add` する
+4. 変更の「why」を1〜2文で要約した日本語の commit メッセージで commit する
+5. `git push origin main`（現在のブランチが main でない場合はそのブランチ）する
+6. commit / push の結果（コミットハッシュ、成否）をユーザーに簡潔に伝える
+
+## 例外（commit / push しない）
+
+- ユーザーが「コミットしない」「push しない」と明示したとき
+- 変更がないとき（空 commit は作らない）
+- pre-commit hook が失敗したとき（修正して**新しい commit** を作る。amend は条件を満たす場合のみ）
+
+## その他
+
+- `git config` は変更しない
+- force push はしない（ユーザーが明示した場合を除く）
