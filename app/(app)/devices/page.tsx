@@ -147,7 +147,7 @@ export default function DevicesPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editDevice, setEditDevice] = useState<Device | null>(null)
   const [newDeviceOpen, setNewDeviceOpen] = useState(false)
-  /** 複製元（新規登録時に hospital_id などを引き継ぐ） */
+  /** 複製元（新規登録フォームの初期値） */
   const [duplicateFrom, setDuplicateFrom] = useState<Device | null>(null)
   const [form, setForm] = useState(emptyDevice)
   const [saving, setSaving] = useState(false)
@@ -386,10 +386,7 @@ export default function DevicesPage() {
           return
         }
       } else {
-        const { error } = await supabase.from('devices').insert({
-          ...payload,
-          hospital_id: duplicateFrom?.hospital_id ?? null,
-        })
+        const { error } = await supabase.from('devices').insert(payload)
         if (error) {
           console.error('[機器台帳] 登録エラー:', error)
           alert(`登録に失敗しました: ${error.message}`)
