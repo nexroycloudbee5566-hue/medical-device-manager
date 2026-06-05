@@ -20,6 +20,7 @@ import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { deviceHasInspectionMaster, mapMaintenanceModelMasterRow } from '@/lib/maintenance-master'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
+import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
 import {
   derivePlannedDate,
   getIntervalMonthsForDevice,
@@ -371,7 +372,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <Link
-                      href="/maintenance"
+                      href={maintenanceInspectionHref(dev)}
                       className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-7 text-xs')}
                     >
                       点検へ
@@ -456,7 +457,7 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <Link
-                    href="/maintenance"
+                    href={maintenanceInspectionHref(dev)}
                     className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-7 text-xs')}
                   >
                     点検へ

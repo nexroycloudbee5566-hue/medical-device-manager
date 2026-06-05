@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Suspense, useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type {
   Device,
@@ -202,7 +203,8 @@ function ChecklistRowInput({
   )
 }
 
-export default function MaintenancePage() {
+function MaintenancePageContent() {
+  const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   const [codeInput, setCodeInput] = useState('')
   const [lookupBusy, setLookupBusy] = useState(false)
@@ -274,6 +276,62 @@ export default function MaintenancePage() {
     }
   }
 
+  const applyLoadedDevice = useCallback(
+    async (data: Device) => {
+      await fetchMasters()
+      setDevice(data)
+      setCompletedDate(format(new Date(), 'yyyy-MM-dd'))
+      setNotes('')
+    },
+    [fetchMasters],
+  )
+
+  const loadDeviceFromQuery = useCallback(
+    async (opts: { barcode?: string; deviceId?: string }) => {
+      setLookupBusy(true)
+      try {
+        if (opts.deviceId) {
+          const { data, error } = await supabase
+            .from('devices')
+            .select('*')
+            .eq('id', opts.deviceId)
+            .maybeSingle()
+          if (error || !data) {
+            setDevice(null)
+            alert('指定された機器が見つかりませんでした。')
+            return
+          }
+          await applyLoadedDevice(data as Device)
+          return
+        }
+        const raw = opts.barcode?.trim()
+        if (!raw) return
+        const { data, error } = await supabase.from('devices').select('*').eq('barcode', raw).maybeSingle()
+        if (error || !data) {
+          setDevice(null)
+          alert(`機器コード「${raw}」に一致する機器が見つかりませんでした。`)
+          return
+        }
+        await applyLoadedDevice(data as Device)
+      } finally {
+        setLookupBusy(false)
+      }
+    },
+    [supabase, applyLoadedDevice],
+  )
+
+  useEffect(() => {
+    const deviceId = searchParams.get('device')
+    const barcode = searchParams.get('barcode')
+    if (!deviceId && !barcode) return
+    if (deviceId && device?.id === deviceId) return
+    if (barcode?.trim() && device?.barcode?.trim() === barcode.trim()) return
+    void loadDeviceFromQuery({
+      deviceId: deviceId ?? undefined,
+      barcode: barcode ?? undefined,
+    })
+  }, [searchParams, device?.id, device?.barcode, loadDeviceFromQuery])
+
   async function lookupByCode() {
     const raw = codeInput.trim()
     if (!raw) return
@@ -286,10 +344,7 @@ export default function MaintenancePage() {
         alert(`機器コード「${raw}」に一致する機器が見つかりませんでした。`)
         return
       }
-      await fetchMasters()
-      setDevice(data as Device)
-      setCompletedDate(format(new Date(), 'yyyy-MM-dd'))
-      setNotes('')
+      await applyLoadedDevice(data as Device)
     } finally {
       setLookupBusy(false)
       setCodeInput('')
@@ -711,5 +766,20 @@ export default function MaintenancePage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function MaintenancePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 max-w-6xl mx-auto flex items-center justify-center py-24 text-slate-400">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          読み込み中...
+        </div>
+      }
+    >
+      <MaintenancePageContent />
+    </Suspense>
   )
 }

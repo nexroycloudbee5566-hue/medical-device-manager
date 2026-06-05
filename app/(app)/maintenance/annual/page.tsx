@@ -29,6 +29,7 @@ import {
   type AnnualPlanItem,
   type AnnualPlanStatus,
 } from '@/lib/annual-maintenance-plan'
+import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
 
 const STATUS_CHIP: Record<AnnualPlanStatus, string> = {
   completed: 'bg-green-50 text-green-800 border-green-200',
@@ -66,7 +67,7 @@ function PlanChip({ item }: { item: AnnualPlanItem }) {
   const label = item.barcode?.trim() || item.name
   return (
     <Link
-      href="/maintenance"
+      href={maintenanceInspectionHref({ id: item.deviceId, barcode: item.barcode })}
       title={[item.name, item.plannedDate, STATUS_LABEL[item.status]].filter(Boolean).join(' · ')}
       className={cn(
         'block rounded border px-1.5 py-1 text-xs font-mono leading-tight hover:opacity-90 transition-opacity',
