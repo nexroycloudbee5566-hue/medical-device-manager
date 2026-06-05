@@ -128,12 +128,16 @@ export default function DashboardPage() {
     periodicMasterCount: 0,
     dailyMasterCount: 0,
     activeDeviceCount: 0,
+    eligibleDeviceCount: 0,
+    noItemsDeviceCount: 0,
+    masterDetails: [] as { manufacturer: string; model: string; master_type: string; itemCount: number }[],
+    deviceDetails: [] as { name: string; status: string; manufacturer: string; model: string; eligible: boolean; reason: string }[],
   })
+  const [diagOpen, setDiagOpen] = useState(false)
 
   const fetchInspectionLists = useCallback(async () => {
     const todayStr = format(new Date(), 'yyyy-MM-dd')
-    const [{ data: devices }, { data: records }, { data: dailyRecords }, { data: mastersRaw }] =
-      await Promise.all([
+    const [devRes, recRes, dailyRes, masRes] = await Promise.all([
       supabase
         .from('devices')
         .select(
@@ -155,11 +159,27 @@ export default function DashboardPage() {
       supabase.from('maintenance_model_masters').select('*'),
     ])
 
-    const masters = filterPeriodicMasters(
-      (mastersRaw ?? []).map((row) =>
-        mapMaintenanceModelMasterRow(row as Record<string, unknown>),
-      ),
+    if (devRes.error)   console.error('[dashboard] devices query error:', devRes.error)
+    if (recRes.error)   console.error('[dashboard] records query error:', recRes.error)
+    if (dailyRes.error) console.error('[dashboard] dailyRecords query error:', dailyRes.error)
+    if (masRes.error)   console.error('[dashboard] masters query error:', masRes.error)
+
+    const devices    = devRes.data
+    const records    = recRes.data
+    const dailyRecords = dailyRes.data
+    const mastersRaw = masRes.data
+
+    const allMasters = (mastersRaw ?? []).map((row) =>
+      mapMaintenanceModelMasterRow(row as Record<string, unknown>),
     )
+
+    console.log('[dashboard] マスタ件数:', allMasters.length,
+      'periodic:', filterPeriodicMasters(allMasters).length,
+      'daily:', allMasters.filter((m) => m.master_type === 'daily').length)
+    console.log('[dashboard] 全マスタ一覧:', allMasters.map((m) =>
+      `[${m.master_type}] ${m.manufacturer}|${m.model} items=${m.checklist_items.length}`))
+
+    const masters = filterPeriodicMasters(allMasters)
 
     const latestByDevice = new Map<string, string>()
     for (const row of records ?? []) {
@@ -173,9 +193,24 @@ export default function DashboardPage() {
     const today = startOfDay(new Date())
     const stale: InspectionListEntry[] = []
     const dueMonth: InspectionListEntry[] = []
+    const allDevices = (devices ?? []) as (InspectionDeviceRow & { status: string })[]
 
-    for (const dev of (devices ?? []) as (InspectionDeviceRow & { status: string })[]) {
-      if (!deviceEligibleForAnnualPlan(masters, dev)) continue
+    console.log('[dashboard] 機器件数(廃棄・休止除く):', allDevices.length,
+      '/ active:', allDevices.filter((d) => d.status === 'active').length)
+    console.log('[dashboard] 機器一覧:', allDevices.map((d) =>
+      `${d.name}|status=${d.status}|${d.manufacturer}|${d.model}`))
+
+    for (const dev of allDevices) {
+      const eligible = deviceEligibleForAnnualPlan(masters, dev)
+      if (!eligible) {
+        const reason = dev.status !== 'active'
+          ? `status=${dev.status}`
+          : !dev.model
+            ? 'model未設定'
+            : `マスタ不一致(${dev.manufacturer}|${dev.model})`
+        console.log(`[dashboard] スキップ: ${dev.name} → ${reason}`)
+        continue
+      }
 
       const last = latestByDevice.get(dev.id) ?? null
       const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
@@ -192,17 +227,19 @@ export default function DashboardPage() {
         plannedDate,
       }
 
-      if (
-        isPlannedInMonth(plannedDate, today) &&
-        !completedInspectionInMonth(last, today)
-      ) {
+      const hasItems = deviceHasInspectionMaster(masters, dev)
+      const staleFlag = isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)
+      const monthFlag = isPlannedInMonth(plannedDate, today) && !completedInspectionInMonth(last, today)
+      console.log(`[dashboard] 対象: ${dev.name} | hasItems=${hasItems} stale=${staleFlag} dueThisMonth=${monthFlag} interval=${intervalMonths}ヶ月 last=${last ?? 'なし'} planned=${plannedDate ?? 'なし'}`)
+
+      if (monthFlag) {
         dueMonth.push(entry)
       }
 
       if (
         dev.status === 'active' &&
-        deviceHasInspectionMaster(masters, dev) &&
-        isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)
+        hasItems &&
+        staleFlag
       ) {
         const dueDate =
           dev.next_maintenance_due?.slice(0, 10) ?? inspectionDueDate(last, intervalMonths)
@@ -228,9 +265,6 @@ export default function DashboardPage() {
       if (did) completedToday.add(did)
     }
 
-    const allMasters = (mastersRaw ?? []).map((row) =>
-      mapMaintenanceModelMasterRow(row as Record<string, unknown>),
-    )
     setDailyInspections(
       buildDailyInspectionEntries(
         (devices ?? []) as DailyInspectionEntry['device'][],
@@ -239,15 +273,40 @@ export default function DashboardPage() {
       ),
     )
 
+    const eligibleCount = allDevices.filter((d) => deviceEligibleForAnnualPlan(masters, d)).length
+    const noItemsCount = allDevices.filter((d) => {
+      if (!deviceEligibleForAnnualPlan(masters, d)) return false
+      return !deviceHasInspectionMaster(masters, d)
+    }).length
+
     setInspectionDueThisMonth(dueMonth)
     setInspectionStale(stale)
     setDiag({
       masterCount: allMasters.length,
       periodicMasterCount: filterPeriodicMasters(allMasters).length,
       dailyMasterCount: allMasters.filter((m) => m.master_type === 'daily').length,
-      activeDeviceCount: ((devices ?? []) as { status: string }[]).filter(
-        (d) => d.status === 'active',
-      ).length,
+      activeDeviceCount: allDevices.filter((d) => d.status === 'active').length,
+      eligibleDeviceCount: eligibleCount,
+      noItemsDeviceCount: noItemsCount,
+      masterDetails: allMasters.map((m) => ({
+        manufacturer: m.manufacturer,
+        model: m.model,
+        master_type: m.master_type,
+        itemCount: m.checklist_items.length,
+      })),
+      deviceDetails: allDevices.map((d) => {
+        const eligible = deviceEligibleForAnnualPlan(masters, d)
+        const reason = !eligible
+          ? d.status !== 'active'
+            ? `status=${d.status}`
+            : !d.model
+              ? 'model未設定'
+              : `マスタ不一致`
+          : !deviceHasInspectionMaster(masters, d)
+            ? '点検項目0件'
+            : 'OK'
+        return { name: d.name, status: d.status, manufacturer: d.manufacturer ?? '', model: d.model ?? '', eligible, reason }
+      }),
     })
   }, [supabase])
 
@@ -332,8 +391,75 @@ export default function DashboardPage() {
             <RefreshCw className="h-3.5 w-3.5 mr-1" />
             更新
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs text-slate-500 border-dashed"
+            onClick={() => setDiagOpen((v) => !v)}
+          >
+            🔍 診断
+          </Button>
         </div>
       </div>
+
+      {/* ── 診断パネル ── */}
+      {diagOpen && (
+        <div className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs space-y-2 overflow-auto max-h-64">
+          <p className="font-bold text-amber-900">データ診断（表示されない原因を確認）</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="bg-white rounded border border-amber-200 p-2">
+              <p className="text-[10px] text-slate-500">マスタ合計</p>
+              <p className="font-bold text-lg">{diag.masterCount < 0 ? '読込中' : diag.masterCount}</p>
+            </div>
+            <div className="bg-white rounded border border-amber-200 p-2">
+              <p className="text-[10px] text-slate-500">定期点検マスタ</p>
+              <p className={`font-bold text-lg ${diag.periodicMasterCount === 0 ? 'text-red-600' : 'text-green-700'}`}>{diag.periodicMasterCount}</p>
+            </div>
+            <div className="bg-white rounded border border-amber-200 p-2">
+              <p className="text-[10px] text-slate-500">稼働中機器</p>
+              <p className={`font-bold text-lg ${diag.activeDeviceCount === 0 ? 'text-red-600' : 'text-green-700'}`}>{diag.activeDeviceCount}</p>
+            </div>
+            <div className="bg-white rounded border border-amber-200 p-2">
+              <p className="text-[10px] text-slate-500">マスタ一致機器</p>
+              <p className={`font-bold text-lg ${diag.eligibleDeviceCount === 0 ? 'text-red-600' : 'text-green-700'}`}>{diag.eligibleDeviceCount}</p>
+              {diag.noItemsDeviceCount > 0 && (
+                <p className="text-[10px] text-orange-600">うち{diag.noItemsDeviceCount}件は点検項目0</p>
+              )}
+            </div>
+          </div>
+
+          {diag.masterDetails.length > 0 && (
+            <div>
+              <p className="font-semibold text-amber-800 mb-1">登録マスタ一覧:</p>
+              <div className="space-y-0.5">
+                {diag.masterDetails.map((m, i) => (
+                  <div key={i} className={`flex items-center gap-2 ${m.itemCount === 0 ? 'text-red-700' : 'text-slate-700'}`}>
+                    <span className={`px-1 rounded text-[10px] ${m.master_type === 'daily' ? 'bg-teal-100' : 'bg-blue-100'}`}>{m.master_type === 'daily' ? '日常' : '定期'}</span>
+                    <span>{m.manufacturer || '(メーカー未設定)'} / {m.model || '(型式未設定)'}</span>
+                    <span className={m.itemCount === 0 ? 'text-red-600 font-bold' : ''}>点検項目: {m.itemCount}件{m.itemCount === 0 ? ' ⚠点検項目なし' : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {diag.deviceDetails.length > 0 && (
+            <div>
+              <p className="font-semibold text-amber-800 mb-1">機器マッチング結果:</p>
+              <div className="space-y-0.5">
+                {diag.deviceDetails.map((d, i) => (
+                  <div key={i} className={`flex items-center gap-2 ${d.eligible && d.reason === 'OK' ? 'text-green-700' : 'text-red-700'}`}>
+                    <span>{d.eligible && d.reason === 'OK' ? '✓' : '✗'}</span>
+                    <span className="font-medium">{d.name}</span>
+                    <span className="text-slate-500">({d.manufacturer || '–'} / {d.model || '未設定'})</span>
+                    <span className={d.reason === 'OK' ? 'text-green-600' : 'text-red-600 font-semibold'}>{d.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── メイングリッド ── */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3">
