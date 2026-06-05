@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Device } from '@/lib/types'
 import {
   Dialog,
@@ -12,14 +12,20 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Printer, Settings2 } from 'lucide-react'
+import { Loader2, Printer, RefreshCw, Settings2 } from 'lucide-react'
 import {
   DEFAULT_PTOUCH_SETTINGS,
   loadPtouchSettings,
   savePtouchSettings,
   type PtouchPrintSettings,
 } from '@/lib/ptouch/settings'
-import { isBpacAvailable, printMeLabelViaBpac } from '@/lib/ptouch/bpac-client'
+import {
+  BPAC_CHROME_EXTENSION_URL,
+  BPAC_EDGE_EXTENSION_URL,
+  getBpacDetectStatus,
+  waitForBpacExtension,
+} from '@/lib/ptouch/bpac-detect'
+import { printMeLabelViaBpac } from '@/lib/ptouch/bpac-client'
 import { printMeLabelsInBrowser } from '@/lib/ptouch/browser-label-print'
 
 export type MeLabelPrintTarget = Pick<Device, 'barcode' | 'name' | 'location'>
@@ -34,14 +40,27 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
   const [copies, setCopies] = useState(1)
   const [busy, setBusy] = useState(false)
   const [bpacReady, setBpacReady] = useState(false)
+  const [bpacChecking, setBpacChecking] = useState(false)
+  const [browserHint, setBrowserHint] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const [settings, setSettings] = useState<PtouchPrintSettings>(DEFAULT_PTOUCH_SETTINGS)
+
+  const refreshBpacStatus = useCallback(async () => {
+    setBpacChecking(true)
+    try {
+      const ok = await waitForBpacExtension(3000)
+      setBpacReady(ok)
+      setBrowserHint(getBpacDetectStatus().browserHint)
+    } finally {
+      setBpacChecking(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) return
     setSettings(loadPtouchSettings())
-    setBpacReady(isBpacAvailable())
-  }, [open])
+    void refreshBpacStatus()
+  }, [open, refreshBpacStatus])
 
   const rows = targets
     .map((t) => ({
@@ -71,6 +90,7 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
           })
           if (!result.ok) {
             alert(result.error)
+            await refreshBpacStatus()
             return
           }
         }
@@ -107,7 +127,7 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
 
         <p className="text-sm text-slate-600 leading-relaxed">
           台帳（Supabase）の ME No. から CODE128 バーコードを作成して印刷します。
-          P-touch 直結には <strong>Windows</strong> と Brother b-PAC が必要です。
+          P-touch 直結には <strong>Windows</strong>・<strong>b-PAC SDK</strong>・<strong>ブラウザ拡張</strong> が必要です。
         </p>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-sm space-y-1">
@@ -128,6 +148,54 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
             <p className="text-xs text-amber-800">ME No. 未設定の機器はスキップされます。</p>
           )}
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="text-slate-600">
+            b-PAC Extension:{' '}
+            {bpacChecking ? (
+              <span className="text-slate-500">確認中…</span>
+            ) : bpacReady ? (
+              <span className="text-green-700 font-medium">検出済み</span>
+            ) : (
+              <span className="text-amber-800 font-medium">未検出</span>
+            )}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs px-2"
+            disabled={bpacChecking}
+            onClick={() => void refreshBpacStatus()}
+          >
+            <RefreshCw className={`h-3 w-3 mr-1 ${bpacChecking ? 'animate-spin' : ''}`} />
+            再検出
+          </Button>
+        </div>
+
+        {!bpacReady && !bpacChecking && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/90 p-3 text-xs text-amber-950 space-y-2 leading-relaxed">
+            <p className="font-medium">b-PAC が未検出のときの確認</p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>
+                <a href={BPAC_CHROME_EXTENSION_URL} target="_blank" rel="noreferrer" className="underline">
+                  Chrome 用拡張
+                </a>
+                {' / '}
+                <a href={BPAC_EDGE_EXTENSION_URL} target="_blank" rel="noreferrer" className="underline">
+                  Edge 用拡張
+                </a>
+                をインストール
+              </li>
+              <li>
+                拡張機能の設定で <strong>このサイト（medical-device-manager の URL）</strong> をオンにする
+              </li>
+              <li>b-PAC SDK（32bit）と b-PAC クライアントを Windows にインストール</li>
+              <li>ページを再読み込み →「再検出」</li>
+            </ol>
+            <p className="text-amber-900/80">{browserHint}</p>
+          </div>
+        )}
 
         <div className="space-y-1.5 max-w-[8rem]">
           <Label>印刷枚数（各機器）</Label>
@@ -155,7 +223,7 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
           <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
             <p className="text-xs text-blue-900 leading-relaxed">
               P-touch Editor でラベルを作成し、バーコードオブジェクト名を下記と一致させて .lbx で保存してください。
-              詳細はリポジトリの <code className="bg-white/80 px-1 rounded">docs/ptouch-setup.md</code> を参照。
+              詳細は <code className="bg-white/80 px-1 rounded">docs/ptouch-setup.md</code> を参照。
             </p>
             <div className="space-y-1.5">
               <Label className="text-xs">テンプレート (.lbx) の絶対パス</Label>
@@ -184,13 +252,6 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
                 />
               </div>
             </div>
-            <p className="text-[11px] text-slate-600">
-              b-PAC: {bpacReady ? (
-                <span className="text-green-700 font-medium">利用可能</span>
-              ) : (
-                <span className="text-amber-800">未検出（SDK・拡張機能をインストール）</span>
-              )}
-            </p>
           </div>
         )}
 
@@ -208,9 +269,9 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
           </Button>
           <Button
             type="button"
-            disabled={busy || rows.length === 0 || !bpacReady}
+            disabled={busy || rows.length === 0}
             onClick={() => void handleBpacPrint()}
-            title={!bpacReady ? 'b-PAC が必要です' : undefined}
+            title={!bpacReady ? '未検出でも印刷を試せます（拡張があれば動作）' : undefined}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
             P-touch で印刷

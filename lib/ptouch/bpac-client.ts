@@ -1,27 +1,14 @@
-/** Brother b-PAC（P-touch ブラウザ拡張）の最小型 */
-type BpacDocument = {
-  Open: (path: string) => Promise<boolean>
-  GetObject: (name: string) => Promise<{ Text: string }>
-  GetBarcodeIndex?: (name: string) => Promise<number>
-  SetBarcodeData?: (index: number, data: string) => Promise<void>
-  StartPrint: (printName: string, option: number) => Promise<void>
-  PrintOut: (copies: number, option: number) => Promise<void>
-  EndPrint: () => Promise<void>
-  Close: () => Promise<void>
-}
+import {
+  getBpacDetectStatus,
+  isBpacExtensionInstalled,
+  waitForBpacExtension,
+} from '@/lib/ptouch/bpac-detect'
 
-type BpacApi = {
-  IDocument: BpacDocument
-}
+export { isBpacExtensionInstalled, waitForBpacExtension, getBpacDetectStatus }
 
-function getBpac(): BpacApi | null {
-  if (typeof window === 'undefined') return null
-  const w = window as Window & { bpac?: BpacApi }
-  return w.bpac?.IDocument ? w.bpac : null
-}
-
+/** @deprecated 互換用。拡張機能クラスの有無を返す */
 export function isBpacAvailable(): boolean {
-  return getBpac() != null
+  return isBpacExtensionInstalled()
 }
 
 export type BpacPrintInput = {
@@ -36,12 +23,17 @@ export type BpacPrintInput = {
 export async function printMeLabelViaBpac(
   input: BpacPrintInput,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const bpac = getBpac()
-  if (!bpac) {
+  const ready = await waitForBpacExtension()
+  if (!ready) {
+    const { browserHint } = getBpacDetectStatus()
     return {
       ok: false,
       error:
-        'Brother b-PAC が利用できません。Windows PC に b-PAC SDK をインストールし、Chrome / Edge で「Brother b-PAC Extension」を有効にしてください。',
+        `Brother b-PAC Extension が検出されません。\n\n` +
+        `1. Windows に b-PAC SDK（32bit）と b-PAC クライアントをインストール\n` +
+        `2. Chrome / Edge に Brother b-PAC Extension を追加し、このサイトで有効化\n` +
+        `3. ページを再読み込みして「再検出」を押す\n\n` +
+        browserHint,
     }
   }
 
@@ -55,53 +47,33 @@ export async function printMeLabelViaBpac(
     return { ok: false, error: 'ME No. が空です。' }
   }
 
-  const doc = bpac.IDocument
-  const opened = await doc.Open(path)
-  if (!opened) {
-    return {
-      ok: false,
-      error: `テンプレートを開けませんでした: ${path}\nP-touch Editor で保存した .lbx の絶対パスか確認してください。`,
-    }
-  }
-
   try {
-    const barcodeName = input.barcodeObjectName.trim() || 'Barcode'
-    if (doc.GetBarcodeIndex && doc.SetBarcodeData) {
-      try {
-        const idx = await doc.GetBarcodeIndex(barcodeName)
-        await doc.SetBarcodeData(idx, meNo)
-      } catch {
-        const obj = await doc.GetObject(barcodeName)
-        obj.Text = meNo
-      }
-    } else {
-      const obj = await doc.GetObject(barcodeName)
-      obj.Text = meNo
+    const { default: BrotherSDK } = await import('bpac-js')
+    const sdk = new BrotherSDK({ templatePath: path })
+
+    const barcodeKey = input.barcodeObjectName.trim() || 'Barcode'
+    const labelData: Record<string, string> = {
+      [barcodeKey]: meNo,
     }
 
     const nameKey = input.nameObjectName.trim()
     if (nameKey && input.deviceName?.trim()) {
-      try {
-        const nameObj = await doc.GetObject(nameKey)
-        nameObj.Text = input.deviceName.trim()
-      } catch {
-        /* テキストオブジェクトが無いテンプレートは無視 */
-      }
+      labelData[nameKey] = input.deviceName.trim()
     }
 
-    await doc.StartPrint('', 0)
-    await doc.PrintOut(Math.max(1, input.copies ?? 1), 0)
-    await doc.EndPrint()
+    await sdk.print(labelData, {
+      copies: Math.max(1, input.copies ?? 1),
+      ignoreMissingKeys: true,
+    })
+
+    return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return { ok: false, error: `印刷中にエラーが発生しました: ${msg}` }
-  } finally {
-    try {
-      await doc.Close()
-    } catch {
-      /* ignore */
+    return {
+      ok: false,
+      error:
+        `P-touch 印刷に失敗しました: ${msg}\n\n` +
+        'テンプレートの .lbx パス、オブジェクト名（Barcode / txtName）、プリンター接続を確認してください。',
     }
   }
-
-  return { ok: true }
 }
