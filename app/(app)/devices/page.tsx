@@ -45,6 +45,7 @@ import {
   ArrowUpDown,
   X,
   Download,
+  Copy,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { downloadCsv, csvFilename } from '@/lib/csv-export'
@@ -146,6 +147,8 @@ export default function DevicesPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editDevice, setEditDevice] = useState<Device | null>(null)
   const [newDeviceOpen, setNewDeviceOpen] = useState(false)
+  /** 複製元（新規登録時に hospital_id などを引き継ぐ） */
+  const [duplicateFrom, setDuplicateFrom] = useState<Device | null>(null)
   const [form, setForm] = useState(emptyDevice)
   const [saving, setSaving] = useState(false)
 
@@ -337,6 +340,10 @@ export default function DevicesPage() {
       alert('機種名を入力してください。')
       return
     }
+    if (!editDevice && duplicateFrom && !form.barcode.trim()) {
+      alert('複製登録では、新しい ME No. を入力してください。')
+      return
+    }
 
     setSaving(true)
     try {
@@ -381,7 +388,7 @@ export default function DevicesPage() {
       } else {
         const { error } = await supabase.from('devices').insert({
           ...payload,
-          hospital_id: null,
+          hospital_id: duplicateFrom?.hospital_id ?? null,
         })
         if (error) {
           console.error('[機器台帳] 登録エラー:', error)
@@ -393,6 +400,7 @@ export default function DevicesPage() {
       await fetchDevices()
       setEditDevice(null)
       setNewDeviceOpen(false)
+      setDuplicateFrom(null)
       setForm(emptyDevice)
     } finally {
       setSaving(false)
@@ -400,13 +408,23 @@ export default function DevicesPage() {
   }
 
   function openNew() {
+    setDuplicateFrom(null)
     setForm(emptyDevice)
     setNewDeviceOpen(true)
   }
 
   function openEdit(device: Device) {
+    setDuplicateFrom(null)
     setForm(deviceToForm(device))
     setEditDevice(device)
+    setNewDeviceOpen(false)
+  }
+
+  function openDuplicate(device: Device) {
+    setEditDevice(null)
+    setDuplicateFrom(device)
+    setForm(deviceToFormForDuplicate(device))
+    setNewDeviceOpen(true)
   }
 
   function exportCsv() {
@@ -628,14 +646,26 @@ export default function DevicesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEdit(device)}
-                      className="h-8 w-8 p-0"
-                    >
-                      <Edit className="h-4 w-4 text-slate-400" />
-                    </Button>
+                    <div className="flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(device)}
+                        className="h-8 w-8 p-0"
+                        title="編集"
+                      >
+                        <Edit className="h-4 w-4 text-slate-400" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openDuplicate(device)}
+                        className="h-8 w-8 p-0"
+                        title="複製"
+                      >
+                        <Copy className="h-4 w-4 text-slate-400" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -648,13 +678,25 @@ export default function DevicesPage() {
       <Dialog
         open={dialogOpen}
         onOpenChange={(v) => {
-          if (!v) { setEditDevice(null); setNewDeviceOpen(false); setForm(emptyDevice) }
+          if (!v) {
+            setEditDevice(null)
+            setNewDeviceOpen(false)
+            setDuplicateFrom(null)
+            setForm(emptyDevice)
+          }
         }}
       >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editDevice ? '機器情報を編集' : '新規機器登録'}</DialogTitle>
+            <DialogTitle>
+              {editDevice ? '機器情報を編集' : duplicateFrom ? '機器情報を複製（新規登録）' : '新規機器登録'}
+            </DialogTitle>
           </DialogHeader>
+          {duplicateFrom && !editDevice && (
+            <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 -mt-2">
+              「{duplicateFrom.barcode ?? duplicateFrom.name}」の内容をコピーしています。ME No. と製造番号は空欄です。登録前に必ず入力してください。
+            </p>
+          )}
           <DeviceForm
             form={form}
             onChange={(key, val) => setForm((f) => ({ ...f, [key]: val }))}
@@ -669,7 +711,12 @@ export default function DevicesPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => { setEditDevice(null); setNewDeviceOpen(false); setForm(emptyDevice) }}
+              onClick={() => {
+                setEditDevice(null)
+                setNewDeviceOpen(false)
+                setDuplicateFrom(null)
+                setForm(emptyDevice)
+              }}
             >
               キャンセル
             </Button>
@@ -749,6 +796,15 @@ function deviceToForm(device: Device): typeof emptyDevice {
     status: normalizeFormStatus(device.status),
     next_maintenance_due: device.next_maintenance_due?.slice(0, 10) ?? '',
     notes: device.notes ?? '',
+  }
+}
+
+/** 複製用: 一意の ME No.・製造番号は空にする */
+function deviceToFormForDuplicate(device: Device): typeof emptyDevice {
+  return {
+    ...deviceToForm(device),
+    barcode: '',
+    serial_number: '',
   }
 }
 
