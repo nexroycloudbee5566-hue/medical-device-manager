@@ -14,7 +14,17 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
-import { RefreshCw, Wrench, ShoppingCart, Hammer, ChevronRight, CalendarClock, CalendarDays } from 'lucide-react'
+import {
+  RefreshCw,
+  Wrench,
+  ShoppingCart,
+  Hammer,
+  ChevronRight,
+  CalendarClock,
+  CalendarDays,
+  ClipboardCheck,
+  ChevronDown,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
@@ -24,7 +34,12 @@ import {
   mapMaintenanceModelMasterRow,
 } from '@/lib/maintenance-master'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
-import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
+import { dailyInspectionHref, maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
+import {
+  buildDailyInspectionEntries,
+  DAILY_INSPECTION_RECORD_TYPE,
+  type DailyInspectionEntry,
+} from '@/lib/daily-inspection'
 import {
   derivePlannedDate,
   getIntervalMonthsForDevice,
@@ -106,12 +121,18 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [inspectionStale, setInspectionStale] = useState<InspectionListEntry[]>([])
   const [inspectionDueThisMonth, setInspectionDueThisMonth] = useState<InspectionListEntry[]>([])
+  const [dailyInspections, setDailyInspections] = useState<DailyInspectionEntry[]>([])
+  const [dailyExpanded, setDailyExpanded] = useState(false)
 
   const fetchInspectionLists = useCallback(async () => {
-    const [{ data: devices }, { data: records }, { data: mastersRaw }] = await Promise.all([
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    const [{ data: devices }, { data: records }, { data: dailyRecords }, { data: mastersRaw }] =
+      await Promise.all([
       supabase
         .from('devices')
-        .select('id, name, barcode, manufacturer, model, next_maintenance_due, location, status')
+        .select(
+          'id, name, barcode, manufacturer, model, next_maintenance_due, location, department, status',
+        )
         .not('status', 'eq', 'disposed')
         .not('status', 'eq', 'inactive'),
       supabase
@@ -119,6 +140,12 @@ export default function DashboardPage() {
         .select('device_id, completed_date')
         .eq('type', '定期点検')
         .not('completed_date', 'is', null),
+      supabase
+        .from('maintenance_records')
+        .select('device_id, completed_date')
+        .eq('type', DAILY_INSPECTION_RECORD_TYPE)
+        .gte('completed_date', todayStr)
+        .lte('completed_date', todayStr),
       supabase.from('maintenance_model_masters').select('*'),
     ])
 
@@ -189,6 +216,23 @@ export default function DashboardPage() {
       return a.lastInspection.localeCompare(b.lastInspection)
     })
 
+    const completedToday = new Set<string>()
+    for (const row of dailyRecords ?? []) {
+      const did = row.device_id as string | null
+      if (did) completedToday.add(did)
+    }
+
+    const allMasters = (mastersRaw ?? []).map((row) =>
+      mapMaintenanceModelMasterRow(row as Record<string, unknown>),
+    )
+    setDailyInspections(
+      buildDailyInspectionEntries(
+        (devices ?? []) as DailyInspectionEntry['device'][],
+        allMasters,
+        completedToday,
+      ),
+    )
+
     setInspectionDueThisMonth(dueMonth)
     setInspectionStale(stale)
   }, [supabase])
@@ -233,6 +277,9 @@ export default function DashboardPage() {
   }, [fetchRequests, fetchInspectionLists, supabase])
 
   const currentMonthLabel = format(new Date(), 'yyyy年M月', { locale: ja })
+  const todayLabel = format(new Date(), 'yyyy年M月d日（E）', { locale: ja })
+  const dailyPendingCount = dailyInspections.filter((e) => !e.completedToday).length
+  const dailyDoneCount = dailyInspections.filter((e) => e.completedToday).length
 
   const repairList = useMemo(
     () => requests.filter((r) => r.type === 'repair'),
@@ -308,6 +355,98 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-0 shadow-sm border-l-4 border-l-teal-500 bg-teal-50/35 overflow-hidden">
+        <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-teal-50/80 border-b border-teal-100">
+          <button
+            type="button"
+            onClick={() => setDailyExpanded((v) => !v)}
+            className="min-w-0 flex-1 text-left rounded-md -m-1 p-1 hover:bg-teal-100/60 transition-colors"
+          >
+            <CardTitle className="text-base font-semibold text-teal-950 flex items-center gap-2">
+              <ClipboardCheck className="h-5 w-5 text-teal-700 shrink-0" />
+              日常点検（{todayLabel}）
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 text-teal-600 transition-transform ml-auto sm:ml-1',
+                  dailyExpanded && 'rotate-180',
+                )}
+              />
+            </CardTitle>
+            <p className="text-xs text-teal-900/75 font-normal leading-snug mt-1">
+              日常点検マスタ登録済みの稼働中機器です。クリックで本日の点検一覧を表示します。
+            </p>
+          </button>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <Badge variant="outline" className="border-teal-300 text-teal-900 bg-white">
+              {loading ? '…' : `未実施 ${dailyPendingCount} / 全 ${dailyInspections.length}`}
+            </Badge>
+            {dailyDoneCount > 0 && (
+              <span className="text-[10px] text-teal-700">完了 {dailyDoneCount} 件</span>
+            )}
+          </div>
+        </CardHeader>
+        {dailyExpanded && (
+          <CardContent className="py-3 px-4">
+            {loading ? (
+              <p className="text-sm text-teal-900/70 py-2">読み込み中…</p>
+            ) : dailyInspections.length === 0 ? (
+              <p className="text-sm text-teal-900/70 py-1">
+                本日の日常点検対象がありません。メンテナンスマスタの「日常点検」タブで登録してください。
+              </p>
+            ) : (
+              <ul className="max-h-96 overflow-y-auto divide-y divide-teal-100 text-sm">
+                {dailyInspections.map(({ device: dev, items, completedToday }) => (
+                  <li
+                    key={dev.id}
+                    className="py-2.5 first:pt-0 flex flex-wrap items-start justify-between gap-2"
+                  >
+                    <div className="min-w-0 space-y-1 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-slate-900 truncate">{dev.name}</p>
+                        <Badge
+                          className={cn(
+                            'text-[10px] border-0',
+                            completedToday
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-900',
+                          )}
+                        >
+                          {completedToday ? '本日完了' : '未実施'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        {dev.barcode ? (
+                          <span className="font-mono mr-2">{dev.barcode}</span>
+                        ) : (
+                          <span className="text-slate-400 mr-2">コードなし</span>
+                        )}
+                        {dev.location ||
+                          [dev.department, dev.manufacturer, dev.model].filter(Boolean).join(' / ') ||
+                          null}
+                      </p>
+                      <ul className="text-xs text-teal-900/90 list-disc list-inside space-y-0.5 pl-0.5">
+                        {items.map((item) => (
+                          <li key={item.key}>{item.label}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <Link
+                      href={dailyInspectionHref(dev)}
+                      className={cn(
+                        buttonVariants({ variant: 'outline', size: 'sm' }),
+                        'shrink-0 h-7 text-xs border-teal-200 text-teal-900 hover:bg-teal-50',
+                      )}
+                    >
+                      {completedToday ? '再記録' : '点検へ'}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        )}
+      </Card>
 
       <Card className="border-0 shadow-sm border-l-4 border-l-blue-500 bg-blue-50/35 overflow-hidden">
         <CardHeader className="py-3 px-4 pb-2 flex flex-row items-start justify-between space-y-0 gap-3 bg-blue-50/80 border-b border-blue-100">
