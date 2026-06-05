@@ -2,8 +2,8 @@ import JsBarcode from 'jsbarcode'
 
 export type MeLabelPrintRow = {
   meNo: string
+  /** 台帳の機種名（devices.name） */
   deviceName?: string
-  location?: string | null
 }
 
 function escapeHtml(s: string): string {
@@ -45,11 +45,11 @@ export function printMeLabelsInBrowser(
   for (const row of rows) {
     for (let c = 0; c < copies; c++) {
       const meNo = row.meNo.trim()
-      const sub = [row.deviceName?.trim(), row.location?.trim()].filter(Boolean).join(' · ')
+      const modelName = row.deviceName?.trim() ?? ''
       labels.push(`
         <div class="label">
           ${barcodeSvg(meNo)}
-          ${sub ? `<p class="sub">${escapeHtml(sub)}</p>` : ''}
+          ${modelName ? `<p class="sub">${escapeHtml(modelName)}</p>` : ''}
         </div>
       `)
     }

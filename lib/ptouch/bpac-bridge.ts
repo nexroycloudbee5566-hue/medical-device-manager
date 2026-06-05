@@ -31,10 +31,6 @@ function bpfacSend(detail: BpacDetail): Promise<BpacDetail> {
   })
 }
 
-function bpfacFire(detail: BpacDetail): void {
-  document.dispatchEvent(new CustomEvent('bpac_send', { detail }))
-}
-
 export async function bpfacOpenTemplate(filePath: string): Promise<boolean> {
   const d = await bpfacSend({ method: 'IDocument::Open', filePath })
   return d.ret === true
@@ -58,14 +54,24 @@ export async function bpfacSetBarcodeData(index: number, text: string): Promise<
   await bpfacSend({ method: 'IDocument::SetBarcodeData', index, text })
 }
 
+export async function bpfacGetTextIndex(name: string): Promise<number | null> {
+  const d = await bpfacSend({ method: 'IDocument::GetTextIndex', name })
+  if (d.ret === false) return null
+  return typeof d.index === 'number' ? d.index : null
+}
+
+export async function bpfacSetText(index: number, text: string): Promise<void> {
+  await bpfacSend({ method: 'IDocument::SetText', index, text })
+}
+
 export async function bpfacGetObjectPointer(name: string): Promise<number | null> {
   const d = await bpfacSend({ method: 'IDocument::GetObject', name })
   if (d.ret === false) return null
   return typeof d.p === 'number' && d.p >= 0 ? d.p : null
 }
 
-export function bpfacSetObjectText(pointer: number, text: string): void {
-  bpfacFire({ method: 'IObject::SetText', p: pointer, text })
+export async function bpfacSetObjectText(pointer: number, text: string): Promise<void> {
+  await bpfacSend({ method: 'IObject::SetText', p: pointer, text })
 }
 
 export async function bpfacStartPrint(docName = '', option = 0): Promise<void> {

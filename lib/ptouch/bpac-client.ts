@@ -3,10 +3,12 @@ import {
   bpfacEndPrint,
   bpfacGetBarcodeIndex,
   bpfacGetObjectPointer,
+  bpfacGetTextIndex,
   bpfacOpenTemplate,
   bpfacPrintOut,
   bpfacSetBarcodeData,
   bpfacSetObjectText,
+  bpfacSetText,
   bpfacStartPrint,
 } from '@/lib/ptouch/bpac-bridge'
 import {
@@ -30,10 +32,37 @@ export function isBpacAvailable(): boolean {
 export type BpacPrintInput = {
   templatePath: string
   meNo: string
+  /** 台帳の機種名（devices.name） */
   deviceName?: string
   copies?: number
   barcodeObjectName: string
   nameObjectName: string
+}
+
+const MODEL_NAME_OBJECT_FALLBACKS = ['txtName', 'objName', 'Text', 'Text1'] as const
+
+async function setTemplateModelName(objectNames: string[], modelName: string): Promise<boolean> {
+  const text = modelName.trim()
+  if (!text) return false
+
+  for (const name of objectNames) {
+    const key = name.trim()
+    if (!key) continue
+
+    const textIndex = await bpfacGetTextIndex(key)
+    if (textIndex != null) {
+      await bpfacSetText(textIndex, text)
+      return true
+    }
+
+    const ptr = await bpfacGetObjectPointer(key)
+    if (ptr != null) {
+      await bpfacSetObjectText(ptr, text)
+      return true
+    }
+  }
+
+  return false
 }
 
 async function openTemplateWithVariants(paths: string[]): Promise<string | null> {
@@ -101,7 +130,7 @@ export async function printMeLabelViaBpac(
     } else {
       const ptr = await bpfacGetObjectPointer(barcodeName)
       if (ptr != null) {
-        bpfacSetObjectText(ptr, meNo)
+        await bpfacSetObjectText(ptr, meNo)
       } else {
         return {
           ok: false,
@@ -110,12 +139,13 @@ export async function printMeLabelViaBpac(
       }
     }
 
-    const nameKey = input.nameObjectName.trim()
-    if (nameKey && input.deviceName?.trim()) {
-      const namePtr = await bpfacGetObjectPointer(nameKey)
-      if (namePtr != null) {
-        bpfacSetObjectText(namePtr, input.deviceName.trim())
-      }
+    const modelName = input.deviceName?.trim()
+    if (modelName) {
+      const objectNames = [
+        input.nameObjectName.trim(),
+        ...MODEL_NAME_OBJECT_FALLBACKS,
+      ].filter((name, index, arr) => name && arr.indexOf(name) === index)
+      await setTemplateModelName(objectNames, modelName)
     }
 
     await bpfacStartPrint('', 0)

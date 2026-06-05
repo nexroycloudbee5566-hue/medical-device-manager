@@ -66,8 +66,7 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
   const rows = targets
     .map((t) => ({
       meNo: t.barcode?.trim() ?? '',
-      deviceName: t.name,
-      location: t.location,
+      deviceName: t.name?.trim() ?? '',
     }))
     .filter((r) => r.meNo)
 
@@ -250,7 +249,7 @@ export function MeLabelPrintDialog({ open, onOpenChange, targets }: Props) {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">機器名テキスト（任意）</Label>
+                <Label className="text-xs">機種名テキスト（任意）</Label>
                 <Input
                   value={settings.nameObjectName}
                   onChange={(e) => setSettings((s) => ({ ...s, nameObjectName: e.target.value }))}

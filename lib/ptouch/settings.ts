@@ -5,7 +5,7 @@ export type PtouchPrintSettings = {
   templatePath: string
   /** テンプレート内のバーコードオブジェクト名 */
   barcodeObjectName: string
-  /** テンプレート内のテキストオブジェクト名（任意） */
+  /** テンプレート内のテキストオブジェクト名（機種名表示用・任意） */
   nameObjectName: string
 }
 
