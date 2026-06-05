@@ -654,6 +654,15 @@ function MaintenancePageContent() {
                   </p>
                 </div>
               </dl>
+              {masterForDevice?.maintenance_method && (
+                <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3 text-slate-800">
+                  <p className="text-xs font-medium text-indigo-800 mb-1">メンテナンス方法（型式マスタ）</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                    {masterForDevice.maintenance_method}
+                  </p>
+                </div>
+              )}
+
               {device.notes && (
                 <div className="rounded-lg bg-slate-50 p-3 text-slate-700">
                   <p className="text-xs font-medium text-slate-500 mb-1">備考（台帳）</p>

@@ -92,6 +92,7 @@ create table if not exists maintenance_model_masters (
   manufacturer text not null default '',
   model text not null default '',
   checklist_items jsonb not null default '[]'::jsonb,
+  maintenance_method text,
   inspection_interval_months integer not null default 12,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),

@@ -7,6 +7,7 @@ import type { MaintenanceChecklistItem } from '@/lib/types'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -87,6 +88,7 @@ export default function MaintenanceMasterPage() {
   const [inspectionIntervalMonths, setInspectionIntervalMonths] = useState(
     DEFAULT_INSPECTION_INTERVAL_MONTHS,
   )
+  const [maintenanceMethod, setMaintenanceMethod] = useState('')
   const [applyTemplateId, setApplyTemplateId] = useState('')
 
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
@@ -127,7 +129,7 @@ export default function MaintenanceMasterPage() {
       if (row) {
         const { data } = await supabase
           .from('maintenance_model_masters')
-          .select('checklist_items, inspection_interval_months')
+          .select('checklist_items, inspection_interval_months, maintenance_method')
           .eq('id', row.id)
           .maybeSingle()
         setMasterId(row.id)
@@ -135,10 +137,14 @@ export default function MaintenanceMasterPage() {
         setInspectionIntervalMonths(
           normalizeIntervalMonths(data?.inspection_interval_months),
         )
+        setMaintenanceMethod(
+          typeof data?.maintenance_method === 'string' ? data.maintenance_method : '',
+        )
       } else {
         setMasterId(null)
         setModelItems([])
         setInspectionIntervalMonths(DEFAULT_INSPECTION_INTERVAL_MONTHS)
+        setMaintenanceMethod('')
       }
       setApplyTemplateId('')
     },
@@ -273,6 +279,7 @@ export default function MaintenanceMasterPage() {
             manufacturer: man,
             model: mod,
             checklist_items,
+            maintenance_method: maintenanceMethod.trim() || null,
             inspection_interval_months: normalizeIntervalMonths(inspectionIntervalMonths),
             updated_at: new Date().toISOString(),
           })
@@ -284,6 +291,7 @@ export default function MaintenanceMasterPage() {
             manufacturer: man,
             model: mod,
             checklist_items,
+            maintenance_method: maintenanceMethod.trim() || null,
             inspection_interval_months: normalizeIntervalMonths(inspectionIntervalMonths),
           })
           .select('id')
@@ -566,6 +574,20 @@ export default function MaintenanceMasterPage() {
                   className="bg-white"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>メンテナンス方法（この型式）</Label>
+              <Textarea
+                value={maintenanceMethod}
+                onChange={(e) => setMaintenanceMethod(e.target.value)}
+                placeholder="点検手順、清掃方法、注意事項、参照マニュアルなど"
+                rows={6}
+                className="bg-white text-sm min-h-[120px]"
+              />
+              <p className="text-xs text-slate-500">
+                定期点検画面で参照できます。点検項目とは別に、作業手順や注意点を記載してください。
+              </p>
             </div>
 
             <div className="space-y-1.5 max-w-md">

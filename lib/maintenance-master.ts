@@ -10,11 +10,16 @@ export function mapMaintenanceModelMasterRow(r: Record<string, unknown>): Mainte
   const inspection_interval_months =
     Number.isFinite(n) && n >= 1 ? Math.min(120, Math.round(n)) : 12
 
+  const methodRaw = r.maintenance_method
+  const maintenance_method =
+    typeof methodRaw === 'string' && methodRaw.trim() ? methodRaw.trim() : null
+
   return {
     id: r.id as string,
     manufacturer: (r.manufacturer as string) ?? '',
     model: (r.model as string) ?? '',
     checklist_items: parseChecklistItems(r.checklist_items),
+    maintenance_method,
     inspection_interval_months,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
