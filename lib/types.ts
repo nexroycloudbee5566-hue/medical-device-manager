@@ -245,6 +245,16 @@ export interface MaintenanceChecklistTemplate {
   updated_at: string
 }
 
+export interface DashboardMessage {
+  id: string
+  title: string | null
+  body: string
+  author_name: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface MaintenanceRecord {
   id: string
   device_id: string

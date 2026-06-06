@@ -132,6 +132,17 @@ create unique index if not exists maintenance_checklist_templates_unique_name_ty
     master_type
   );
 
+-- ダッシュボードお知らせ（管理者 → 全スタッフ）
+create table if not exists dashboard_messages (
+  id uuid primary key default gen_random_uuid(),
+  title text,
+  body text not null,
+  author_name text not null default '',
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- メンテナンス記録
 create table if not exists maintenance_records (
   id uuid primary key default gen_random_uuid(),
@@ -160,6 +171,7 @@ alter table request_logs enable row level security;
 alter table maintenance_records enable row level security;
 alter table maintenance_model_masters enable row level security;
 alter table maintenance_checklist_templates enable row level security;
+alter table dashboard_messages enable row level security;
 
 -- hospitals: 認証済みユーザーは全件参照可能
 create policy "hospitals_select" on hospitals for select to authenticated using (true);
@@ -193,11 +205,21 @@ create policy "maintenance_model_masters_all" on maintenance_model_masters for a
 -- maintenance_checklist_templates: 認証済みユーザーは全操作可能
 create policy "maintenance_checklist_templates_all" on maintenance_checklist_templates for all to authenticated using (true) with check (true);
 
+-- dashboard_messages: 全員参照、投稿は管理者のみ
+create policy "dashboard_messages_select" on dashboard_messages for select to authenticated using (true);
+create policy "dashboard_messages_admin_insert" on dashboard_messages for insert to authenticated
+  with check (exists (select 1 from profiles where id = auth.uid() and role = 'admin'));
+create policy "dashboard_messages_admin_update" on dashboard_messages for update to authenticated
+  using (exists (select 1 from profiles where id = auth.uid() and role = 'admin'));
+create policy "dashboard_messages_admin_delete" on dashboard_messages for delete to authenticated
+  using (exists (select 1 from profiles where id = auth.uid() and role = 'admin'));
+
 -- =====================================================
 -- Realtime 有効化
 -- =====================================================
 alter publication supabase_realtime add table requests;
 alter publication supabase_realtime add table request_logs;
+alter publication supabase_realtime add table dashboard_messages;
 
 -- =====================================================
 -- 新規ユーザー登録時に自動でプロフィール作成するトリガー

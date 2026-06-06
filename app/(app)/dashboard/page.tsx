@@ -16,6 +16,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
+import { DashboardMessages } from '@/components/dashboard/dashboard-messages'
 import {
   RefreshCw,
   Wrench,
@@ -409,6 +410,9 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* ── 管理者お知らせ ── */}
+      <DashboardMessages />
 
       {/* ── 診断パネル ── */}
       {diagOpen && (
