@@ -24,7 +24,6 @@ import {
   CalendarClock,
   CalendarDays,
   ClipboardCheck,
-  ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
@@ -123,7 +122,6 @@ export default function DashboardPage() {
   const [inspectionStale, setInspectionStale] = useState<InspectionListEntry[]>([])
   const [inspectionDueThisMonth, setInspectionDueThisMonth] = useState<InspectionListEntry[]>([])
   const [dailyInspections, setDailyInspections] = useState<DailyInspectionEntry[]>([])
-  const [dailyExpanded, setDailyExpanded] = useState(false)
   const [diag, setDiag] = useState({
     masterCount: -1,
     periodicMasterCount: 0,
@@ -480,31 +478,18 @@ export default function DashboardPage() {
         {/* ======= 左列: 点検パネル ======= */}
         <div className="flex flex-col gap-3 min-h-0">
 
-          {/* 日常点検（折りたたみ） */}
+          {/* 日常点検（常時展開） */}
           <div className="shrink-0 rounded-xl border-l-4 border-l-teal-500 bg-teal-50/35 border border-teal-100 shadow-sm overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setDailyExpanded((v) => !v)}
-              className="w-full flex items-center justify-between gap-2 px-4 py-2.5 bg-teal-50/80 hover:bg-teal-100/60 transition-colors text-left"
-            >
+            <div className="w-full flex items-center justify-between gap-2 px-4 py-2.5 bg-teal-50/80">
               <span className="flex items-center gap-2 text-sm font-semibold text-teal-950 min-w-0">
                 <ClipboardCheck className="h-4 w-4 text-teal-700 shrink-0" />
                 <span className="truncate">日常点検（{todayLabel}）</span>
               </span>
-              <span className="flex items-center gap-2 shrink-0">
-                <Badge variant="outline" className="border-teal-300 text-teal-900 bg-white text-[10px]">
-                  {loading ? '…' : `未実施 ${dailyPendingCount} / ${dailyInspections.length}`}
-                </Badge>
-                <ChevronDown
-                  className={cn(
-                    'h-4 w-4 text-teal-600 transition-transform',
-                    dailyExpanded && 'rotate-180',
-                  )}
-                />
-              </span>
-            </button>
-            {dailyExpanded && (
-              <div className="px-4 py-2 overflow-y-auto max-h-48">
+              <Badge variant="outline" className="border-teal-300 text-teal-900 bg-white text-[10px] shrink-0">
+                {loading ? '…' : `未実施 ${dailyPendingCount} / ${dailyInspections.length}`}
+              </Badge>
+            </div>
+            <div className="px-4 py-2 overflow-y-auto max-h-48">
                 {loading ? (
                   <p className="text-sm text-teal-900/70 py-1">読み込み中…</p>
                 ) : dailyInspections.length === 0 ? (
@@ -562,8 +547,7 @@ export default function DashboardPage() {
                     ))}
                   </ul>
                 )}
-              </div>
-            )}
+            </div>
           </div>
 
           {/* 今月の定期点検（flex-1、内部スクロール） */}
