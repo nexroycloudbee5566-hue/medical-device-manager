@@ -140,12 +140,8 @@ export default function DashboardPage() {
   const fetchInspectionLists = useCallback(async () => {
     const todayStr = format(new Date(), 'yyyy-MM-dd')
     const [devRes, recRes, dailyRes, masRes] = await Promise.all([
-      // フィルターなしで全件取得し JS 側で除外（PostgREST の .not() との相性問題を回避）
-      supabase
-        .from('devices')
-        .select(
-          'id, name, barcode, manufacturer, model, next_maintenance_due, location, department, status',
-        ),
+      // select('*') で全カラム取得（存在しないカラム指定エラーを回避）
+      supabase.from('devices').select('*'),
       supabase
         .from('maintenance_records')
         .select('device_id, completed_date')
