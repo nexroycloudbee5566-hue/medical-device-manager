@@ -128,3 +128,79 @@
     @apply font-sans;
   }
 }
+
+.manual-prose {
+  @apply text-slate-700 text-sm leading-relaxed space-y-4;
+}
+
+.manual-prose > h1 {
+  @apply text-xl font-bold text-slate-900 mt-2 mb-4;
+}
+
+.manual-h2 {
+  @apply text-lg font-bold text-slate-900 mt-8 mb-3 pt-4 border-t border-slate-200 scroll-mt-4;
+}
+
+.manual-h3 {
+  @apply text-base font-semibold text-slate-800 mt-5 mb-2;
+}
+
+.manual-prose p {
+  @apply text-slate-700 leading-relaxed;
+}
+
+.manual-prose ul {
+  @apply list-disc pl-5 space-y-1;
+}
+
+.manual-prose ol {
+  @apply list-decimal pl-5 space-y-1;
+}
+
+.manual-prose li {
+  @apply text-slate-700;
+}
+
+.manual-link {
+  @apply text-blue-600 underline hover:text-blue-800;
+}
+
+.manual-blockquote {
+  @apply border-l-4 border-blue-200 bg-blue-50/60 pl-4 py-2 text-slate-700 rounded-r-md;
+}
+
+.manual-table-wrap {
+  @apply overflow-x-auto rounded-lg border border-slate-200;
+}
+
+.manual-table {
+  @apply w-full text-sm;
+}
+
+.manual-table th {
+  @apply bg-slate-50 px-4 py-2 text-left font-semibold text-slate-800 border-b border-slate-200;
+}
+
+.manual-table td {
+  @apply px-4 py-2 border-b border-slate-100 text-slate-700;
+}
+
+.manual-pre {
+  @apply bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono text-slate-700 overflow-x-auto whitespace-pre;
+}
+
+.manual-code-inline {
+  @apply bg-slate-100 px-1.5 py-0.5 rounded text-xs font-mono text-slate-800;
+}
+
+.manual-prose hr {
+  @apply border-slate-200 my-6;
+}
+
+.manual-prose strong {
+  @apply font-semibold text-slate-900;
+}
+
+.manual-prose em {
+  @apply text-slate-600 italic;
+}
