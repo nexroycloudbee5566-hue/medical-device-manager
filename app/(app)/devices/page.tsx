@@ -65,6 +65,7 @@ import {
   MeLabelPrintDialog,
   type MeLabelPrintTarget,
 } from '@/components/devices/me-label-print-dialog'
+import { DeviceKarte } from '@/components/devices/device-karte'
 
 const STATUS_BADGE: Record<DeviceStatus, string> = {
   active: 'bg-green-100 text-green-700 border-0',
@@ -160,6 +161,7 @@ export default function DevicesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [labelPrintOpen, setLabelPrintOpen] = useState(false)
   const [labelPrintTargets, setLabelPrintTargets] = useState<MeLabelPrintTarget[]>([])
+  const [karteDevice, setKarteDevice] = useState<Device | null>(null)
 
   const fetchDevices = useCallback(async () => {
     const { data, error } = await supabase.from('devices').select('*').order('barcode')
@@ -177,14 +179,21 @@ export default function DevicesPage() {
     fetchDevices()
   }, [fetchDevices])
 
+  const karteDeviceId = karteDevice?.id
+  useEffect(() => {
+    if (!karteDeviceId) return
+    const updated = devices.find((d) => d.id === karteDeviceId)
+    if (updated) setKarteDevice(updated)
+    else setKarteDevice(null)
+  }, [devices, karteDeviceId])
+
   async function handleBarcodeSearch(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
     const code = barcodeInput.trim()
     if (!code) return
     const found = devices.find((d) => d.barcode === code)
     if (found) {
-      setEditDevice(found)
-      setForm(deviceToForm(found))
+      setKarteDevice(found)
     } else {
       alert(`「${code}」に一致する機器が見つかりませんでした。`)
     }
@@ -654,7 +663,7 @@ export default function DevicesPage() {
           {filtered.length} 件表示
           {devices.length !== filtered.length && `（全 ${devices.length} 件）`}
           <span className="text-slate-400 mx-2">·</span>
-          列見出しをクリックで並べ替え
+          行をクリックで機器カルテ表示 · 列見出しをクリックで並べ替え
         </p>
       </div>
 
@@ -669,7 +678,8 @@ export default function DevicesPage() {
           <p className="font-medium">機器が見つかりません</p>
         </div>
       ) : (
-        <Card className="border-0 shadow-sm overflow-hidden">
+        <div className={cn('grid gap-6 items-start', karteDevice ? 'lg:grid-cols-2' : 'grid-cols-1')}>
+        <Card className="border-0 shadow-sm overflow-hidden min-w-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50">
@@ -685,7 +695,14 @@ export default function DevicesPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((device) => (
-                <TableRow key={device.id} className="hover:bg-slate-50">
+                <TableRow
+                  key={device.id}
+                  className={cn(
+                    'hover:bg-slate-50 cursor-pointer',
+                    karteDevice?.id === device.id && 'bg-blue-50 hover:bg-blue-50',
+                  )}
+                  onClick={() => setKarteDevice(device)}
+                >
                   <TableCell className="font-mono text-xs text-slate-500">
                     {device.barcode ?? '-'}
                   </TableCell>
@@ -718,7 +735,7 @@ export default function DevicesPage() {
                       {DEVICE_STATUS_LABEL[normalizeFormStatus(device.status)]}
                     </Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-0.5">
                       <Button
                         variant="ghost"
@@ -770,6 +787,15 @@ export default function DevicesPage() {
             </TableBody>
           </Table>
         </Card>
+
+        {karteDevice && (
+          <DeviceKarte
+            device={karteDevice}
+            onClose={() => setKarteDevice(null)}
+            className="lg:sticky lg:top-4"
+          />
+        )}
+        </div>
       )}
 
       <MeLabelPrintDialog
