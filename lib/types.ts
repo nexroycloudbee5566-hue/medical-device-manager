@@ -255,6 +255,30 @@ export interface DashboardMessage {
   updated_at: string
 }
 
+export interface LoginHistoryEntry {
+  id: string
+  user_id: string | null
+  user_name: string | null
+  role: UserRole | null
+  success: boolean
+  failure_reason: string | null
+  ip_address: string | null
+  user_agent: string | null
+  created_at: string
+}
+
+export interface AuditLogEntry {
+  id: string
+  user_id: string | null
+  user_name: string
+  action: string
+  entity_type: string
+  entity_id: string | null
+  summary: string
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
 /** スタッフから管理者へのメッセージ */
 export interface AdminInboxMessage {
   id: string

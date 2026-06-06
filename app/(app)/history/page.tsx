@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Request, MaintenanceRecord, REQUEST_TYPE_LABEL } from '@/lib/types'
+import { logAuditEvent } from '@/lib/audit-log'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -102,6 +103,12 @@ export default function HistoryPage() {
         alert('削除に失敗しました。')
         return
       }
+      void logAuditEvent(supabase, {
+        action: 'delete',
+        entityType: 'request',
+        entityId: req.id,
+        summary: `完了済み${REQUEST_TYPE_LABEL[req.type]}を削除`,
+      })
       await fetchAll()
     } finally {
       setDeletingId(null)
@@ -124,6 +131,12 @@ export default function HistoryPage() {
         alert('削除に失敗しました。')
         return
       }
+      void logAuditEvent(supabase, {
+        action: 'delete',
+        entityType: 'maintenance_record',
+        entityId: rec.id,
+        summary: `点検記録を削除（${devName}）`,
+      })
       await fetchAll()
     } finally {
       setDeletingMaintenanceId(null)

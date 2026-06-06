@@ -16,6 +16,7 @@ import {
   deviceStatusForAssessment,
   insertErrorHint,
 } from '@/lib/repair-request'
+import { logAuditEvent } from '@/lib/audit-log'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -197,6 +198,14 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
             '一覧に表示されない場合はページを更新してください。',
         )
       }
+
+      void logAuditEvent(supabase, {
+        action: 'create',
+        entityType: 'request',
+        entityId: request.id,
+        summary: `${REQUEST_TYPE_LABEL[effectiveType]}を登録（${equip} / ${name}）`,
+        metadata: { type: effectiveType, status: initialStatus },
+      })
 
       onCreated()
       onClose()

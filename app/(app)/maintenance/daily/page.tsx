@@ -10,6 +10,7 @@ import type {
   MaintenanceModelMaster,
   ChecklistResultEntry,
 } from '@/lib/types'
+import { logAuditEvent } from '@/lib/audit-log'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -232,6 +233,14 @@ function DailyMaintenancePageContent() {
         maintenance_model_master_id: masterForDevice?.id ?? null,
         checklist_results,
         created_by: user?.id ?? null,
+      })
+
+      void logAuditEvent(supabase, {
+        action: 'create',
+        entityType: 'maintenance_record',
+        entityId: device.id,
+        summary: `日常点検を記録（${device.barcode ?? device.name}）`,
+        metadata: { completed_date: completedDate },
       })
 
       await loadRecentForDevice(device.id)

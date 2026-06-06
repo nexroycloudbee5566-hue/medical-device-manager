@@ -3,6 +3,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { validateAdminPin, validateStaffPin } from '@/lib/pin-auth'
 import { hashPin } from '@/lib/pin-user-server'
+import { recordAuditLogServer } from '@/lib/audit-log-server'
 
 export const runtime = 'nodejs'
 
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
   }
 
-  const { data: me } = await supabaseServer.from('profiles').select('role').eq('id', user.id).single()
+  const { data: me } = await supabaseServer.from('profiles').select('role, name').eq('id', user.id).single()
   if (me?.role !== 'admin') {
     return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
   }
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
 
   const { data: target, error: tErr } = await admin
     .from('profiles')
-    .select('id, role')
+    .select('id, role, name')
     .eq('id', userId)
     .single()
 
@@ -67,6 +68,15 @@ export async function POST(request: Request) {
       error: 'このユーザーには PIN 用データがありません。PIN でログインできるユーザーとして新規作成してください。',
     }, { status: 400 })
   }
+
+  await recordAuditLogServer({
+    userId: user.id,
+    userName: me?.name?.trim() || '管理者',
+    action: 'update',
+    entityType: 'profile',
+    entityId: userId,
+    summary: `ユーザーの PIN を変更（${target.name}）`,
+  })
 
   return NextResponse.json({ success: true })
 }

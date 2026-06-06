@@ -16,6 +16,7 @@ import {
   isInHouseRepair,
   syncDeviceStatusForRepair,
 } from '@/lib/repair-request'
+import { logAuditEvent } from '@/lib/audit-log'
 import { formatRequestEquipmentWithMeNo, getRequestMeNo } from '@/lib/request-display'
 import {
   coerceEstimateAmount,
@@ -186,6 +187,14 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
         if (deviceError) {
           alert(`ステータスは更新されましたが、機器ステータスの更新に失敗しました: ${deviceError}`)
         }
+
+        void logAuditEvent(supabase, {
+          action: 'status_change',
+          entityType: 'request',
+          entityId: request.id,
+          summary: `${REQUEST_TYPE_LABEL[request.type]}: ${request.status} → ${newStatus}`,
+          metadata: { from: request.status, to: newStatus },
+        })
       } else if (amountOnlyUpdate && parsedEstimate !== null) {
         const prev =
           storedEstimate !== null ? formatYen(storedEstimate) : '（未登録）'
@@ -216,6 +225,14 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           alert(`見積金額の更新に失敗しました: ${updateError.message}`)
           return
         }
+
+        void logAuditEvent(supabase, {
+          action: 'update',
+          entityType: 'request',
+          entityId: request.id,
+          summary: `${REQUEST_TYPE_LABEL[request.type]}: 見積金額を更新`,
+          metadata: { estimate_amount: parsedEstimate },
+        })
       }
 
       const freshLogs = await fetchRequestLogs(supabase, request.id)
@@ -241,6 +258,12 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
         alert('削除に失敗しました。')
         return
       }
+      void logAuditEvent(supabase, {
+        action: 'delete',
+        entityType: 'request',
+        entityId: request.id,
+        summary: `${REQUEST_TYPE_LABEL[request.type]}を削除（${request.requested_equipment ?? request.description.slice(0, 30)}）`,
+      })
       onUpdated()
     } finally {
       setDeleting(false)

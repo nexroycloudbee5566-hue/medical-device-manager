@@ -154,6 +154,36 @@ create table if not exists admin_inbox_messages (
   created_at timestamptz default now()
 );
 
+-- ログイン履歴（管理者閲覧）
+create table if not exists login_history (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  user_name text,
+  role text check (role is null or role in ('admin', 'staff')),
+  success boolean not null default false,
+  failure_reason text,
+  ip_address text,
+  user_agent text,
+  created_at timestamptz default now()
+);
+
+-- 操作ログ（管理者閲覧）
+create table if not exists audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  user_name text not null default '',
+  action text not null,
+  entity_type text not null,
+  entity_id uuid,
+  summary text not null,
+  metadata jsonb,
+  created_at timestamptz default now()
+);
+
+create index if not exists login_history_created_at_idx on login_history (created_at desc);
+create index if not exists audit_logs_created_at_idx on audit_logs (created_at desc);
+create index if not exists audit_logs_entity_idx on audit_logs (entity_type, entity_id);
+
 -- メンテナンス記録
 create table if not exists maintenance_records (
   id uuid primary key default gen_random_uuid(),
@@ -184,6 +214,8 @@ alter table maintenance_model_masters enable row level security;
 alter table maintenance_checklist_templates enable row level security;
 alter table dashboard_messages enable row level security;
 alter table admin_inbox_messages enable row level security;
+alter table login_history enable row level security;
+alter table audit_logs enable row level security;
 
 -- hospitals: 認証済みユーザーは全件参照可能
 create policy "hospitals_select" on hospitals for select to authenticated using (true);
@@ -233,6 +265,16 @@ create policy "admin_inbox_admin_select" on admin_inbox_messages for select to a
 create policy "admin_inbox_admin_update" on admin_inbox_messages for update to authenticated
   using (exists (select 1 from profiles where id = auth.uid() and role = 'admin'));
 create policy "admin_inbox_admin_delete" on admin_inbox_messages for delete to authenticated
+  using (exists (select 1 from profiles where id = auth.uid() and role = 'admin'));
+
+-- login_history: 閲覧は管理者のみ（記録はサーバー API 経由）
+create policy "login_history_admin_select" on login_history for select to authenticated
+  using (exists (select 1 from profiles where id = auth.uid() and role = 'admin'));
+
+-- audit_logs: 認証ユーザーは自分の操作を記録、閲覧は管理者のみ
+create policy "audit_logs_insert" on audit_logs for insert to authenticated
+  with check (user_id = auth.uid());
+create policy "audit_logs_admin_select" on audit_logs for select to authenticated
   using (exists (select 1 from profiles where id = auth.uid() and role = 'admin'));
 
 -- =====================================================

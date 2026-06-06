@@ -21,6 +21,7 @@ import {
   ShoppingCart,
   ClipboardList,
   CalendarRange,
+  ScrollText,
 } from 'lucide-react'
 
 const navItems = [
@@ -45,7 +46,7 @@ export function Sidebar({ profile, userEmail }: SidebarProps) {
   const supabase = createClient()
 
   async function handleSignOut() {
-    await supabase.auth.signOut()
+    await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/auth/login')
     router.refresh()
   }
@@ -97,13 +98,25 @@ export function Sidebar({ profile, userEmail }: SidebarProps) {
               href="/admin/users"
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                pathname.startsWith('/admin')
+                pathname.startsWith('/admin/users')
                   ? 'bg-blue-50 text-blue-700'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               )}
             >
               <Users className="h-4 w-4 shrink-0" />
               ユーザー管理
+            </Link>
+            <Link
+              href="/admin/audit"
+              className={cn(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                pathname.startsWith('/admin/audit')
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              )}
+            >
+              <ScrollText className="h-4 w-4 shrink-0" />
+              ログ・監査
             </Link>
           </>
         )}

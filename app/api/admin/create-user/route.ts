@@ -2,6 +2,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { validateAdminPin, validateStaffPin } from '@/lib/pin-auth'
 import { createPinAuthUser } from '@/lib/pin-user-server'
+import { recordAuditLogServer } from '@/lib/audit-log-server'
 
 export const runtime = 'nodejs'
 
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
 
   const { data: profile } = await supabaseServer
     .from('profiles')
-    .select('role')
+    .select('role, name')
     .eq('id', user.id)
     .single()
 
@@ -47,11 +48,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    await createPinAuthUser(url, serviceRoleKey, {
+    const newUserId = await createPinAuthUser(url, serviceRoleKey, {
       name,
       role,
       pin,
       hospital_id: hospital_id || null,
+    })
+
+    await recordAuditLogServer({
+      userId: user.id,
+      userName: profile?.name?.trim() || '管理者',
+      action: 'create',
+      entityType: 'profile',
+      entityId: newUserId,
+      summary: `ユーザーを作成（${name} / ${role === 'admin' ? '管理者' : '一般'}）`,
     })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'ユーザー作成に失敗しました'

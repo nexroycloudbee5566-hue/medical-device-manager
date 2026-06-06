@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { syntheticEmailForPinAuth, validateAdminPin, validateStaffPin } from '@/lib/pin-auth'
 import { verifyPin } from '@/lib/pin-user-server'
+import { clientInfoFromRequest, recordLoginAttempt } from '@/lib/audit-log-server'
 
 export const runtime = 'nodejs'
 
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'サーバー設定エラー' }, { status: 500 })
   }
 
+  const { ip, userAgent } = clientInfoFromRequest(request)
+
   const body = await request.json().catch(() => null) as {
     profileId?: string
     pin?: string
@@ -26,14 +29,31 @@ export async function POST(request: Request) {
   const pin = body?.pin ?? ''
   const mode = body?.mode === 'admin' ? 'admin' : body?.mode === 'staff' ? 'staff' : null
 
+  async function logFailure(
+    reason: string,
+    opts?: { userId?: string; userName?: string; role?: 'admin' | 'staff' },
+  ) {
+    await recordLoginAttempt({
+      userId: opts?.userId ?? profileId ?? null,
+      userName: opts?.userName ?? null,
+      role: opts?.role ?? mode,
+      success: false,
+      failureReason: reason,
+      ip,
+      userAgent,
+    })
+  }
+
   if (!profileId || !mode) {
     return NextResponse.json({ error: '入力が不正です' }, { status: 400 })
   }
 
   if (mode === 'admin' && !validateAdminPin(pin)) {
+    await logFailure('PIN形式不正（管理者）')
     return NextResponse.json({ error: '管理者PINは8桁の数字です' }, { status: 400 })
   }
   if (mode === 'staff' && !validateStaffPin(pin)) {
+    await logFailure('PIN形式不正（一般）')
     return NextResponse.json({ error: '一般用PINは6桁の数字です' }, { status: 400 })
   }
 
@@ -43,15 +63,21 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profErr } = await admin
     .from('profiles')
-    .select('id, role')
+    .select('id, role, name')
     .eq('id', profileId)
     .single()
 
   if (profErr || !profile) {
+    await logFailure('ユーザーが見つかりません')
     return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 401 })
   }
 
   if (profile.role !== mode) {
+    await logFailure('権限が一致しません', {
+      userId: profile.id,
+      userName: profile.name,
+      role: profile.role as 'admin' | 'staff',
+    })
     return NextResponse.json({ error: '権限が一致しません' }, { status: 401 })
   }
 
@@ -62,11 +88,21 @@ export async function POST(request: Request) {
     .single()
 
   if (secErr || !secretRow) {
+    await logFailure('PINログイン未設定', {
+      userId: profile.id,
+      userName: profile.name,
+      role: profile.role as 'admin' | 'staff',
+    })
     return NextResponse.json({ error: 'PINログインが設定されていません。管理者に連絡してください。' }, { status: 401 })
   }
 
   const pinOk = await verifyPin(pin, secretRow.pin_hash)
   if (!pinOk) {
+    await logFailure('PINが正しくありません', {
+      userId: profile.id,
+      userName: profile.name,
+      role: profile.role as 'admin' | 'staff',
+    })
     return NextResponse.json({ error: 'PINが正しくありません' }, { status: 401 })
   }
 
@@ -93,8 +129,22 @@ export async function POST(request: Request) {
   })
 
   if (signErr) {
+    await logFailure('セッション作成失敗', {
+      userId: profile.id,
+      userName: profile.name,
+      role: profile.role as 'admin' | 'staff',
+    })
     return NextResponse.json({ error: 'ログインに失敗しました。しばらく待って再度お試しください。' }, { status: 500 })
   }
+
+  await recordLoginAttempt({
+    userId: profile.id,
+    userName: profile.name,
+    role: profile.role as 'admin' | 'staff',
+    success: true,
+    ip,
+    userAgent,
+  })
 
   return response
 }

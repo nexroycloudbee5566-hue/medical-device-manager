@@ -42,6 +42,7 @@ import {
   User,
 } from 'lucide-react'
 import { validateAdminPin, validateStaffPin } from '@/lib/pin-auth'
+import { logAuditEvent } from '@/lib/audit-log'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 
@@ -121,6 +122,14 @@ export default function AdminUsersPage() {
       hospital_id: form.hospital_id || null,
       updated_at: new Date().toISOString(),
     }).eq('id', editProfile.id)
+
+    void logAuditEvent(supabase, {
+      action: 'update',
+      entityType: 'profile',
+      entityId: editProfile.id,
+      summary: `ユーザー情報を更新（${form.name}）`,
+      metadata: { role: form.role },
+    })
 
     if (editPin.trim() || editPinConfirm.trim()) {
       if (editPin !== editPinConfirm) {

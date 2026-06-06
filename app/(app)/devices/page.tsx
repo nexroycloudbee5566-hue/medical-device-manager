@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Device, DEVICE_STATUS_LABEL, DeviceStatus } from '@/lib/types'
+import { logAuditEvent } from '@/lib/audit-log'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -342,6 +343,12 @@ export default function DevicesPage() {
 
       const dupMsg = dupCount > 0 ? `\n（同一 ME No. の重複 ${dupCount} 行は除去済み）` : ''
       alert(`Excelから ${payloads.length} 件を取り込みました。\n新規: ${toInsert.length} 件 / 更新: ${toUpdate.length} 件${dupMsg}`)
+      void logAuditEvent(supabase, {
+        action: 'import',
+        entityType: 'device',
+        summary: `機器台帳 Excel 取込（新規 ${toInsert.length} / 更新 ${toUpdate.length}）`,
+        metadata: { inserted: toInsert.length, updated: toUpdate.length },
+      })
       fetchDevices()
     } catch (err) {
       console.error(err)
@@ -403,6 +410,12 @@ export default function DevicesPage() {
           alert('保存に失敗しました（対象の機器が見つかりません）。一覧を更新してから再度お試しください。')
           return
         }
+        void logAuditEvent(supabase, {
+          action: 'update',
+          entityType: 'device',
+          entityId: editDevice.id,
+          summary: `機器を更新（${payload.barcode ?? payload.name}）`,
+        })
       } else {
         const { error } = await supabase.from('devices').insert(payload)
         if (error) {
@@ -410,6 +423,11 @@ export default function DevicesPage() {
           alert(`登録に失敗しました: ${error.message}`)
           return
         }
+        void logAuditEvent(supabase, {
+          action: 'create',
+          entityType: 'device',
+          summary: `機器を登録（${payload.barcode ?? payload.name}）`,
+        })
       }
 
       await fetchDevices()
@@ -466,6 +484,13 @@ export default function DevicesPage() {
         alert(`削除に失敗しました: ${error.message}`)
         return
       }
+
+      void logAuditEvent(supabase, {
+        action: 'delete',
+        entityType: 'device',
+        entityId: device.id,
+        summary: `機器を削除（${deviceDeleteLabel(device)}）`,
+      })
 
       if (editDevice?.id === device.id) {
         setEditDevice(null)

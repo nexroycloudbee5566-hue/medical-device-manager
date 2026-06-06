@@ -17,6 +17,7 @@ import {
   isInHouseRepair,
   syncDeviceStatusForRepair,
 } from '@/lib/repair-request'
+import { logAuditEvent } from '@/lib/audit-log'
 import {
   formatRequestEquipmentWithMeNo,
   getRequestEquipmentName,
@@ -192,6 +193,14 @@ export function RequestCard({
       if (deviceError) {
         alert(`ステータスは更新されましたが、機器ステータスの更新に失敗しました: ${deviceError}`)
       }
+
+      void logAuditEvent(supabase, {
+        action: 'status_change',
+        entityType: 'request',
+        entityId: request.id,
+        summary: `${REQUEST_TYPE_LABEL[request.type]}: ${request.status} → ${next}`,
+        metadata: { from: request.status, to: next },
+      })
 
       closeAdvanceDialog()
       await loadLogs()
