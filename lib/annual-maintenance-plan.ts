@@ -1,5 +1,6 @@
 import { format, parse, startOfDay, isValid } from 'date-fns'
 import type { Device, MaintenanceModelMaster } from '@/lib/types'
+import { normalizeDeviceStatus } from '@/lib/types'
 import { filterPeriodicMasters, matchMasterForDevice } from '@/lib/maintenance-master'
 
 /** 年間計画の対象: 利用中かつメンテナンスマスタ（型式）が登録されている機器 */
@@ -7,7 +8,7 @@ export function deviceEligibleForAnnualPlan(
   masters: MaintenanceModelMaster[],
   dev: Pick<{ manufacturer?: string | null; model?: string | null; status?: string }, 'manufacturer' | 'model' | 'status'>,
 ): boolean {
-  if (dev.status !== 'active') return false
+  if (normalizeDeviceStatus(dev.status) !== 'active') return false
   const periodic = filterPeriodicMasters(masters)
   return matchMasterForDevice(periodic, dev.manufacturer, dev.model, 'periodic') != null
 }

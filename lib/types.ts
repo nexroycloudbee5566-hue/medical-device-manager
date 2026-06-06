@@ -219,6 +219,23 @@ export const DEVICE_STATUS_LABEL: Record<DeviceStatus, string> = {
   repair: '修理中',
 }
 
+/** DBに日本語ステータスが残っている場合を含め英語キーに正規化する */
+const JAPANESE_TO_STATUS: Record<string, DeviceStatus> = {
+  '利用中': 'active',
+  '移動': 'moved',
+  '廃棄': 'disposed',
+  '破棄': 'disposed',
+  '不明': 'unknown',
+  '修理中': 'repair',
+  'inactive': 'disposed',
+}
+
+export function normalizeDeviceStatus(raw: string | null | undefined): DeviceStatus {
+  if (!raw) return 'unknown'
+  if (raw in JAPANESE_TO_STATUS) return JAPANESE_TO_STATUS[raw]
+  return raw as DeviceStatus
+}
+
 export const REQUEST_TYPE_LABEL: Record<RequestType, string> = {
   repair: '修理依頼',
   purchase: '購入依頼',

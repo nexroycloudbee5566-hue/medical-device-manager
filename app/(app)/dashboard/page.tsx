@@ -9,6 +9,7 @@ import {
   type Request,
   type RequestType,
   getStatusList,
+  normalizeDeviceStatus,
 } from '@/lib/types'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -196,15 +197,16 @@ export default function DashboardPage() {
     const allDevices = (devices ?? []) as (InspectionDeviceRow & { status: string })[]
 
     console.log('[dashboard] 機器件数(廃棄・休止除く):', allDevices.length,
-      '/ active:', allDevices.filter((d) => d.status === 'active').length)
+      '/ active:', allDevices.filter((d) => normalizeDeviceStatus(d.status) === 'active').length)
     console.log('[dashboard] 機器一覧:', allDevices.map((d) =>
-      `${d.name}|status=${d.status}|${d.manufacturer}|${d.model}`))
+      `${d.name}|status=${d.status}(→${normalizeDeviceStatus(d.status)})|${d.manufacturer}|${d.model}`))
 
     for (const dev of allDevices) {
       const eligible = deviceEligibleForAnnualPlan(masters, dev)
       if (!eligible) {
-        const reason = dev.status !== 'active'
-          ? `status=${dev.status}`
+        const normalStatus = normalizeDeviceStatus(dev.status)
+        const reason = normalStatus !== 'active'
+          ? `status=${dev.status}(${normalStatus})`
           : !dev.model
             ? 'model未設定'
             : `マスタ不一致(${dev.manufacturer}|${dev.model})`
@@ -237,7 +239,7 @@ export default function DashboardPage() {
       }
 
       if (
-        dev.status === 'active' &&
+        normalizeDeviceStatus(dev.status) === 'active' &&
         hasItems &&
         staleFlag
       ) {
@@ -285,7 +287,7 @@ export default function DashboardPage() {
       masterCount: allMasters.length,
       periodicMasterCount: filterPeriodicMasters(allMasters).length,
       dailyMasterCount: allMasters.filter((m) => m.master_type === 'daily').length,
-      activeDeviceCount: allDevices.filter((d) => d.status === 'active').length,
+      activeDeviceCount: allDevices.filter((d) => normalizeDeviceStatus(d.status) === 'active').length,
       eligibleDeviceCount: eligibleCount,
       noItemsDeviceCount: noItemsCount,
       masterDetails: allMasters.map((m) => ({
@@ -296,9 +298,10 @@ export default function DashboardPage() {
       })),
       deviceDetails: allDevices.map((d) => {
         const eligible = deviceEligibleForAnnualPlan(masters, d)
+        const normalStatus = normalizeDeviceStatus(d.status)
         const reason = !eligible
-          ? d.status !== 'active'
-            ? `status=${d.status}`
+          ? normalStatus !== 'active'
+            ? `status=${d.status}(利用中以外)`
             : !d.model
               ? 'model未設定'
               : `マスタ不一致`
@@ -416,7 +419,7 @@ export default function DashboardPage() {
               <p className={`font-bold text-lg ${diag.periodicMasterCount === 0 ? 'text-red-600' : 'text-green-700'}`}>{diag.periodicMasterCount}</p>
             </div>
             <div className="bg-white rounded border border-amber-200 p-2">
-              <p className="text-[10px] text-slate-500">稼働中機器</p>
+              <p className="text-[10px] text-slate-500">利用中機器</p>
               <p className={`font-bold text-lg ${diag.activeDeviceCount === 0 ? 'text-red-600' : 'text-green-700'}`}>{diag.activeDeviceCount}</p>
             </div>
             <div className="bg-white rounded border border-amber-200 p-2">

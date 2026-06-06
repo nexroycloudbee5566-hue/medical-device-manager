@@ -1,4 +1,5 @@
 import type { MaintenanceChecklistItem, MaintenanceModelMaster } from '@/lib/types'
+import { normalizeDeviceStatus } from '@/lib/types'
 import { filterMastersByType, matchMasterForDevice } from '@/lib/maintenance-master'
 
 export const DAILY_INSPECTION_RECORD_TYPE = '日常点検'
@@ -45,7 +46,7 @@ export function buildDailyInspectionEntries(
   const entries: DailyInspectionEntry[] = []
 
   for (const dev of devices) {
-    if (dev.status !== 'active') continue
+    if (normalizeDeviceStatus(dev.status) !== 'active') continue
     const master = matchMasterForDevice(
       dailyMasters,
       dev.manufacturer,

@@ -1,5 +1,6 @@
 import { format, startOfDay } from 'date-fns'
 import { normalizeModelKeyPart } from '@/lib/maintenance-master'
+import { normalizeDeviceStatus } from '@/lib/types'
 
 export type DeviceForInitialPlan = {
   id: string
@@ -35,7 +36,7 @@ export function filterDevicesForInitialPlan(
   return devices
     .filter(
       (d) =>
-        d.status === 'active' &&
+        normalizeDeviceStatus(d.status) === 'active' &&
         deviceMatchesModelPair(d, manufacturer, model) &&
         !deviceIdsWithInspection.has(d.id) &&
         !d.next_maintenance_due,
