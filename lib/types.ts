@@ -255,6 +255,17 @@ export interface DashboardMessage {
   updated_at: string
 }
 
+/** スタッフから管理者へのメッセージ */
+export interface AdminInboxMessage {
+  id: string
+  sender_name: string
+  body: string
+  created_by: string | null
+  is_read: boolean
+  read_at: string | null
+  created_at: string
+}
+
 export interface MaintenanceRecord {
   id: string
   device_id: string
