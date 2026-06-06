@@ -69,6 +69,10 @@ create table if not exists requests (
   estimate_amount numeric(14, 2),
   requested_equipment text,
   reception_ce_name text,
+  repair_route text not null default 'manufacturer' check (repair_route in ('manufacturer', 'in_house')),
+  reception_assessment text check (reception_assessment is null or reception_assessment in ('normal', 'repair', 'dispose')),
+  repair_content text,
+  replacement_parts text,
   created_by uuid references auth.users(id),
   created_at timestamptz default now(),
   updated_at timestamptz default now()

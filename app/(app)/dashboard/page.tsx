@@ -62,8 +62,12 @@ type InspectionListEntry = {
   plannedDate: string | null
 }
 
-function requestProgressPct(type: RequestType, status: string): number {
-  const statusList = getStatusList(type)
+function requestProgressPct(
+  type: RequestType,
+  status: string,
+  repairRoute?: Request['repair_route'],
+): number {
+  const statusList = getStatusList(type, repairRoute)
   const idx = statusList.indexOf(status as never)
   if (idx === -1) return 0
   return Math.round((idx / (statusList.length - 1)) * 100)
@@ -728,7 +732,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="px-3 py-2 space-y-2">
                         {g.requests.map((req) => {
-                          const pct = requestProgressPct('repair', req.status)
+                          const pct = requestProgressPct('repair', req.status, req.repair_route)
                           return (
                             <div key={req.id} className="space-y-1.5">
                               <div className="flex items-center justify-between gap-2">

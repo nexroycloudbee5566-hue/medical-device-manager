@@ -16,6 +16,19 @@ export const REPAIR_STATUSES = [
   '完了',
 ] as const
 
+/** 自施設修理の進行ステータス */
+export const IN_HOUSE_REPAIR_STATUSES = [
+  '受付',
+  '修理中',
+  '修理完了',
+  '完了',
+] as const
+
+export type RepairRoute = 'manufacturer' | 'in_house'
+
+/** 自施設修理・受付時の機器状態判定 */
+export type ReceptionAssessment = 'normal' | 'repair' | 'dispose'
+
 export const PURCHASE_STATUSES = [
   '依頼受付',
   '確認中',
@@ -28,14 +41,45 @@ export const PURCHASE_STATUSES = [
   '完了',
 ] as const
 
-export type RequestStatus = typeof REPAIR_STATUSES[number] | typeof PURCHASE_STATUSES[number]
+export type RequestStatus =
+  | typeof REPAIR_STATUSES[number]
+  | typeof IN_HOUSE_REPAIR_STATUSES[number]
+  | typeof PURCHASE_STATUSES[number]
 
-export function getStatusList(type: RequestType): readonly string[] {
-  return type === 'repair' ? REPAIR_STATUSES : PURCHASE_STATUSES
+export function resolveRepairRoute(route: RepairRoute | null | undefined): RepairRoute {
+  return route === 'in_house' ? 'in_house' : 'manufacturer'
 }
 
-export function getNextStatus(type: RequestType, current: string): string | null {
-  const list = getStatusList(type)
+export function getStatusList(
+  type: RequestType,
+  repairRoute?: RepairRoute | null,
+): readonly string[] {
+  if (type === 'purchase') return PURCHASE_STATUSES
+  if (resolveRepairRoute(repairRoute) === 'in_house') return IN_HOUSE_REPAIR_STATUSES
+  return REPAIR_STATUSES
+}
+
+export function getNextStatus(
+  type: RequestType,
+  current: string,
+  options?: {
+    repairRoute?: RepairRoute | null
+    receptionAssessment?: ReceptionAssessment | null
+  },
+): string | null {
+  const repairRoute = resolveRepairRoute(options?.repairRoute)
+  if (type === 'repair' && repairRoute === 'in_house') {
+    if (current === '受付') {
+      const assessment = options?.receptionAssessment
+      if (assessment === 'normal' || assessment === 'dispose') return '完了'
+      return '修理中'
+    }
+    const list = IN_HOUSE_REPAIR_STATUSES
+    const idx = list.indexOf(current as (typeof IN_HOUSE_REPAIR_STATUSES)[number])
+    if (idx === -1 || idx === list.length - 1) return null
+    return list[idx + 1]
+  }
+  const list = getStatusList(type, repairRoute)
   const idx = list.indexOf(current as never)
   if (idx === -1 || idx === list.length - 1) return null
   return list[idx + 1]
@@ -101,6 +145,14 @@ export interface Request {
   requested_equipment?: string | null
   /** 受付したCEの氏名 */
   reception_ce_name?: string | null
+  /** 修理依頼の経路（メーカー修理 / 自施設修理） */
+  repair_route?: RepairRoute | null
+  /** 自施設修理・受付時の機器状態（正常 / 修理 / 破棄） */
+  reception_assessment?: ReceptionAssessment | null
+  /** 自施設修理・完了時の修理内容 */
+  repair_content?: string | null
+  /** 自施設修理・完了時の交換パーツ */
+  replacement_parts?: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -239,4 +291,15 @@ export function normalizeDeviceStatus(raw: string | null | undefined): DeviceSta
 export const REQUEST_TYPE_LABEL: Record<RequestType, string> = {
   repair: '修理依頼',
   purchase: '購入依頼',
+}
+
+export const REPAIR_ROUTE_LABEL: Record<RepairRoute, string> = {
+  manufacturer: 'メーカー修理',
+  in_house: '自施設修理',
+}
+
+export const RECEPTION_ASSESSMENT_LABEL: Record<ReceptionAssessment, string> = {
+  normal: '正常',
+  repair: '修理',
+  dispose: '破棄',
 }

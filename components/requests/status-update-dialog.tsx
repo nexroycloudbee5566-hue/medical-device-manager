@@ -2,7 +2,20 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Request, getStatusList, REQUEST_TYPE_LABEL } from '@/lib/types'
+import {
+  Request,
+  RECEPTION_ASSESSMENT_LABEL,
+  REPAIR_ROUTE_LABEL,
+  getStatusList,
+  REQUEST_TYPE_LABEL,
+} from '@/lib/types'
+import {
+  advanceRequiresCompletionFields,
+  advanceRequiresRepairNotes,
+  buildInHouseLogNotes,
+  isInHouseRepair,
+  syncDeviceStatusForRepair,
+} from '@/lib/repair-request'
 import {
   coerceEstimateAmount,
   estimatesAmountEqual,
@@ -45,18 +58,23 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
   const supabase = createClient()
   const [newStatus, setNewStatus] = useState(request.status)
   const [notes, setNotes] = useState('')
+  const [repairContent, setRepairContent] = useState('')
+  const [replacementParts, setReplacementParts] = useState('')
   const [estimateAmount, setEstimateAmount] = useState('')
   const [handledByName, setHandledByName] = useState('')
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof fetchRequestLogs>>>([])
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const statusList = getStatusList(request.type)
+  const statusList = getStatusList(request.type, request.repair_route)
+  const inHouse = isInHouseRepair(request)
 
   useEffect(() => {
     if (!open) return
     setNewStatus(request.status)
     setNotes('')
+    setRepairContent(request.repair_content?.trim() ?? '')
+    setReplacementParts(request.replacement_parts?.trim() ?? '')
     const stored = coerceEstimateAmount(request.estimate_amount)
     setEstimateAmount(stored !== null ? String(Math.round(stored)) : '')
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -71,7 +89,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
     void fetchRequestLogs(supabase, request.id).then((rows) => {
       setLogs(mergeRegistrationNotes(rows, request.notes))
     })
-  }, [open, request.id, request.status, request.estimate_amount, request.notes, supabase])
+  }, [open, request.id, request.status, request.estimate_amount, request.notes, request.repair_content, request.replacement_parts, supabase])
 
   const parsedEstimate = parseEstimateInput(estimateAmount)
   const atEstimateStatus = newStatus === '見積受取'
@@ -90,9 +108,17 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
 
   const handledOk = handledByName.trim().length > 0
 
+  const needsRepairNotes = statusChanged && advanceRequiresRepairNotes(request, newStatus)
+  const needsCompletionFields = statusChanged && advanceRequiresCompletionFields(request, newStatus)
+
+  const inHouseFieldsOk =
+    (!needsRepairNotes || notes.trim().length > 0) &&
+    (!needsCompletionFields || (repairContent.trim().length > 0 && replacementParts.trim().length > 0))
+
   const canUpdate =
     handledOk &&
     estimateOk &&
+    inHouseFieldsOk &&
     (statusChanged || amountOnlyUpdate)
 
   async function handleUpdate() {
@@ -103,7 +129,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
       const actor = handledByName.trim()
 
       if (statusChanged) {
-        let logNotes = notes.trim() || null
+        let logNotes = buildInHouseLogNotes(newStatus, notes, repairContent, replacementParts)
         if (newStatus === '見積受取' && parsedEstimate !== null) {
           const extra = `見積金額 ${formatYen(parsedEstimate)}`
           logNotes = logNotes ? `${extra}／${logNotes}` : extra
@@ -126,12 +152,18 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           status: string
           updated_at: string
           estimate_amount?: number | null
+          repair_content?: string | null
+          replacement_parts?: string | null
         } = {
           status: newStatus,
           updated_at: new Date().toISOString(),
         }
         if (newStatus === '見積受取' && parsedEstimate !== null) {
           updatePayload.estimate_amount = parsedEstimate
+        }
+        if (needsCompletionFields) {
+          updatePayload.repair_content = repairContent.trim()
+          updatePayload.replacement_parts = replacementParts.trim()
         }
         const { error: updateError } = await supabase
           .from('requests')
@@ -141,6 +173,17 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           console.error('[依頼] ステータス更新エラー:', updateError)
           alert(`ステータス更新に失敗しました: ${updateError.message}`)
           return
+        }
+
+        const deviceError = await syncDeviceStatusForRepair(
+          supabase,
+          request.device_id,
+          request.reception_assessment,
+          newStatus,
+          request.repair_route,
+        )
+        if (deviceError) {
+          alert(`ステータスは更新されましたが、機器ステータスの更新に失敗しました: ${deviceError}`)
         }
       } else if (amountOnlyUpdate && parsedEstimate !== null) {
         const prev =
@@ -205,21 +248,28 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>依頼詳細・ステータス更新</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          {/* Request summary */}
           <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="outline">{REQUEST_TYPE_LABEL[request.type]}</Badge>
+              {inHouse && (
+                <Badge variant="outline">{REPAIR_ROUTE_LABEL.in_house}</Badge>
+              )}
               <Badge>{request.status}</Badge>
             </div>
             <p className="font-medium text-slate-800">{request.description}</p>
             <div className="text-slate-500 space-y-1">
               {request.reception_ce_name && (
                 <p className="text-slate-700 font-medium">受付CE: {request.reception_ce_name}</p>
+              )}
+              {inHouse && request.reception_assessment && (
+                <p className="text-slate-700">
+                  受付判定: {RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]}
+                </p>
               )}
               {(() => {
                 const eq =
@@ -233,6 +283,12 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
                 <p className="text-slate-700 font-medium">
                   登録済み見積金額: {formatYen(storedEstimate)}
                 </p>
+              )}
+              {request.repair_content && (
+                <p className="text-slate-700">修理内容: {request.repair_content}</p>
+              )}
+              {request.replacement_parts && (
+                <p className="text-slate-700">交換パーツ: {request.replacement_parts}</p>
               )}
               {request.notes && <p className="text-xs text-slate-400">備考: {request.notes}</p>}
             </div>
@@ -254,7 +310,6 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
             )}
           </div>
 
-          {/* Status update */}
           <div className="space-y-1.5">
             <Label>ステータスを更新</Label>
             <Select value={newStatus} onValueChange={(v) => setNewStatus(v ?? request.status)}>
@@ -269,7 +324,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
             </Select>
           </div>
 
-          {atEstimateStatus && (
+          {atEstimateStatus && !inHouse && (
             <div className="space-y-1.5">
               <Label htmlFor="estimate-amount">
                 見積金額（円）{statusChanged && newStatus === '見積受取' ? ' *' : ''}
@@ -291,16 +346,50 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
             </div>
           )}
 
+          {needsCompletionFields && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="repair-content">修理内容 *</Label>
+                <Textarea
+                  id="repair-content"
+                  value={repairContent}
+                  onChange={(e) => setRepairContent(e.target.value)}
+                  placeholder="実施した修理内容を入力"
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="replacement-parts">交換パーツ *</Label>
+                <Textarea
+                  id="replacement-parts"
+                  value={replacementParts}
+                  onChange={(e) => setReplacementParts(e.target.value)}
+                  placeholder="交換した部品名・型番など（なければ「なし」）"
+                  rows={2}
+                />
+              </div>
+            </>
+          )}
+
           <div className="space-y-1.5">
-            <Label htmlFor="log-notes">備考（任意）</Label>
+            <Label htmlFor="log-notes">
+              {needsRepairNotes ? '備考 *' : '備考（任意）'}
+            </Label>
             <Textarea
               id="log-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="このステップの補足・連絡事項など"
+              placeholder={
+                needsRepairNotes
+                  ? '修理中の作業内容・連絡事項など'
+                  : 'このステップの補足・連絡事項など'
+              }
               rows={3}
             />
             <p className="text-xs text-slate-500">入力した内容は進行履歴に記録されます。</p>
+            {needsRepairNotes && !notes.trim() && statusChanged && (
+              <p className="text-xs text-red-600">備考を入力してください。</p>
+            )}
           </div>
 
           {logs.length > 0 && (

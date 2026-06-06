@@ -2,7 +2,21 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Request, getStatusList, getNextStatus, REQUEST_TYPE_LABEL } from '@/lib/types'
+import {
+  Request,
+  RECEPTION_ASSESSMENT_LABEL,
+  REPAIR_ROUTE_LABEL,
+  getStatusList,
+  getNextStatus,
+  REQUEST_TYPE_LABEL,
+} from '@/lib/types'
+import {
+  advanceRequiresCompletionFields,
+  advanceRequiresRepairNotes,
+  buildInHouseLogNotes,
+  isInHouseRepair,
+  syncDeviceStatusForRepair,
+} from '@/lib/repair-request'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -36,6 +50,7 @@ import { coerceEstimateAmount, formatYen } from '@/lib/estimate-amount'
 
 export const REQUEST_STATUS_COLORS: Record<string, string> = {
   '依頼受付': 'bg-slate-100 text-slate-700',
+  '受付': 'bg-slate-100 text-slate-700',
   '確認中': 'bg-blue-100 text-blue-700',
   '選定': 'bg-purple-100 text-purple-700',
   '業者見積依頼': 'bg-yellow-100 text-yellow-800',
@@ -43,6 +58,8 @@ export const REQUEST_STATUS_COLORS: Record<string, string> = {
   '院内決済': 'bg-red-100 text-red-700',
   '業者報告': 'bg-pink-100 text-pink-700',
   '修理': 'bg-teal-100 text-teal-700',
+  '修理中': 'bg-teal-100 text-teal-700',
+  '修理完了': 'bg-emerald-100 text-emerald-800',
   '購入': 'bg-teal-100 text-teal-700',
   '完了': 'bg-green-100 text-green-700',
 }
@@ -62,8 +79,14 @@ export function RequestCard({
   const [pendingNext, setPendingNext] = useState<string | null>(null)
   const [handledByName, setHandledByName] = useState('')
   const [advanceNotes, setAdvanceNotes] = useState('')
+  const [repairContent, setRepairContent] = useState('')
+  const [replacementParts, setReplacementParts] = useState('')
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof fetchRequestLogs>>>([])
-  const nextStatus = getNextStatus(request.type, request.status)
+
+  const nextStatus = getNextStatus(request.type, request.status, {
+    repairRoute: request.repair_route,
+    receptionAssessment: request.reception_assessment,
+  })
 
   const loadLogs = useCallback(async () => {
     const rows = await fetchRequestLogs(supabase, request.id)
@@ -77,6 +100,8 @@ export function RequestCard({
   useEffect(() => {
     if (!advanceOpen) return
     setAdvanceNotes('')
+    setRepairContent('')
+    setReplacementParts('')
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('name').eq('id', user.id).maybeSingle().then(({ data }) => {
@@ -94,41 +119,75 @@ export function RequestCard({
     setAdvanceOpen(false)
     setPendingNext(null)
     setAdvanceNotes('')
+    setRepairContent('')
+    setReplacementParts('')
   }
+
+  const needsRepairNotes = pendingNext
+    ? advanceRequiresRepairNotes(request, pendingNext)
+    : false
+  const needsCompletionFields = pendingNext
+    ? advanceRequiresCompletionFields(request, pendingNext)
+    : false
+
+  const canConfirmAdvance =
+    handledByName.trim().length > 0 &&
+    (!needsRepairNotes || advanceNotes.trim().length > 0) &&
+    (!needsCompletionFields || (repairContent.trim().length > 0 && replacementParts.trim().length > 0))
 
   async function confirmAdvance() {
     const next = pendingNext
-    if (!next) return
+    if (!next || !canConfirmAdvance) return
     const actor = handledByName.trim()
-    if (!actor) {
-      alert('対応者（記名）を入力してください。')
-      return
-    }
     setUpdating(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      const logNotes = buildInHouseLogNotes(next, advanceNotes, repairContent, replacementParts)
+
       const { error: logError } = await supabase.from('request_logs').insert({
         request_id: request.id,
         from_status: request.status,
         to_status: next,
         changed_by: user?.id ?? null,
         handled_by_name: actor,
-        notes: advanceNotes.trim() || null,
+        notes: logNotes,
       })
       if (logError) {
         console.error('[依頼] 履歴登録エラー:', logError)
         alert(`ステータス更新に失敗しました: ${logError.message}`)
         return
       }
+
+      const updatePayload: Record<string, unknown> = {
+        status: next,
+        updated_at: new Date().toISOString(),
+      }
+      if (needsCompletionFields) {
+        updatePayload.repair_content = repairContent.trim()
+        updatePayload.replacement_parts = replacementParts.trim()
+      }
+
       const { error: updateError } = await supabase
         .from('requests')
-        .update({ status: next, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', request.id)
       if (updateError) {
         console.error('[依頼] ステータス更新エラー:', updateError)
         alert(`ステータス更新に失敗しました: ${updateError.message}`)
         return
       }
+
+      const deviceError = await syncDeviceStatusForRepair(
+        supabase,
+        request.device_id,
+        request.reception_assessment,
+        next,
+        request.repair_route,
+      )
+      if (deviceError) {
+        alert(`ステータスは更新されましたが、機器ステータスの更新に失敗しました: ${deviceError}`)
+      }
+
       closeAdvanceDialog()
       await loadLogs()
       onStatusUpdate()
@@ -137,7 +196,7 @@ export function RequestCard({
     }
   }
 
-  const statusList = getStatusList(request.type)
+  const statusList = getStatusList(request.type, request.repair_route)
   const currentIdx = statusList.indexOf(request.status as never)
   const progress = Math.round(((currentIdx) / (statusList.length - 1)) * 100)
 
@@ -145,6 +204,15 @@ export function RequestCard({
     (request.devices as { name?: string } | undefined)?.name?.trim() ||
     request.requested_equipment?.trim() ||
     null
+
+  const nextButtonLabel =
+    nextStatus === '見積受取'
+      ? '見積受取へ（金額は詳細から入力）'
+      : nextStatus === '完了' && request.status === '受付' && isInHouseRepair(request)
+        ? '完了にする（正常／破棄）'
+        : nextStatus
+          ? `次のステップへ: ${nextStatus}`
+          : ''
 
   return (
     <>
@@ -163,6 +231,11 @@ export function RequestCard({
                   <span className="text-xs font-medium text-slate-500">
                     {REQUEST_TYPE_LABEL[request.type]}
                   </span>
+                  {request.type === 'repair' && request.repair_route && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {REPAIR_ROUTE_LABEL[request.repair_route]}
+                    </Badge>
+                  )}
                   <Badge
                     className={`text-xs font-medium border-0 ${REQUEST_STATUS_COLORS[request.status] ?? 'bg-slate-100 text-slate-700'}`}
                   >
@@ -206,6 +279,14 @@ export function RequestCard({
                 <span className="truncate">受付: {request.reception_ce_name}</span>
               </div>
             )}
+            {isInHouseRepair(request) && request.reception_assessment && (
+              <div className="flex items-center gap-1.5 text-slate-600">
+                <span className="text-xs text-slate-500">受付判定:</span>
+                <Badge variant="outline" className="text-[10px]">
+                  {RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]}
+                </Badge>
+              </div>
+            )}
             {equipmentLabel && (
               <div className="flex items-start gap-1.5 text-slate-600">
                 <Cpu className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -230,6 +311,12 @@ export function RequestCard({
                 <Banknote className="h-3.5 w-3.5 shrink-0 text-orange-600" />
                 <span>見積 {formatYen(coerceEstimateAmount(request.estimate_amount)!)}</span>
               </div>
+            )}
+            {request.repair_content && (
+              <p className="text-xs text-slate-600">修理内容: {request.repair_content}</p>
+            )}
+            {request.replacement_parts && (
+              <p className="text-xs text-slate-600">交換パーツ: {request.replacement_parts}</p>
             )}
           </div>
 
@@ -259,9 +346,7 @@ export function RequestCard({
                 className="text-blue-600 border-blue-200 hover:bg-blue-50"
               >
                 {updating ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-                {nextStatus === '見積受取'
-                  ? '見積受取へ（金額は詳細から入力）'
-                  : `次のステップへ: ${nextStatus}`}
+                {nextButtonLabel}
               </Button>
             </div>
           )}
@@ -274,7 +359,7 @@ export function RequestCard({
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 {updating ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-                完了にする
+                {nextButtonLabel || '完了にする'}
               </Button>
             </div>
           )}
@@ -306,23 +391,60 @@ export function RequestCard({
                 placeholder="このステップを進めたCEの氏名"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="advance-notes">備考（任意）</Label>
-              <Textarea
-                id="advance-notes"
-                value={advanceNotes}
-                onChange={(e) => setAdvanceNotes(e.target.value)}
-                placeholder="このステップの補足・連絡事項など"
-                rows={3}
-              />
-              <p className="text-xs text-slate-500">入力した内容は進行履歴に記録されます。</p>
-            </div>
+            {needsRepairNotes && (
+              <div className="space-y-1.5">
+                <Label htmlFor="advance-notes">備考 *</Label>
+                <Textarea
+                  id="advance-notes"
+                  value={advanceNotes}
+                  onChange={(e) => setAdvanceNotes(e.target.value)}
+                  placeholder="修理中の作業内容・連絡事項など"
+                  rows={3}
+                />
+              </div>
+            )}
+            {needsCompletionFields && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="repair-content">修理内容 *</Label>
+                  <Textarea
+                    id="repair-content"
+                    value={repairContent}
+                    onChange={(e) => setRepairContent(e.target.value)}
+                    placeholder="実施した修理内容を入力"
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="replacement-parts">交換パーツ *</Label>
+                  <Textarea
+                    id="replacement-parts"
+                    value={replacementParts}
+                    onChange={(e) => setReplacementParts(e.target.value)}
+                    placeholder="交換した部品名・型番など（なければ「なし」）"
+                    rows={2}
+                  />
+                </div>
+              </>
+            )}
+            {!needsRepairNotes && !needsCompletionFields && (
+              <div className="space-y-1.5">
+                <Label htmlFor="advance-notes">備考（任意）</Label>
+                <Textarea
+                  id="advance-notes"
+                  value={advanceNotes}
+                  onChange={(e) => setAdvanceNotes(e.target.value)}
+                  placeholder="このステップの補足・連絡事項など"
+                  rows={3}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" type="button" onClick={closeAdvanceDialog}>
               キャンセル
             </Button>
-            <Button type="button" onClick={confirmAdvance} disabled={updating}>
+            <Button type="button" onClick={confirmAdvance} disabled={updating || !canConfirmAdvance}>
               {updating && <RefreshCw className="h-4 w-4 animate-spin mr-2" />}
               進める
             </Button>
