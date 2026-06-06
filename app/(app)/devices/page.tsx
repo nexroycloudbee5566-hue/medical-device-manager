@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Device, DEVICE_STATUS_LABEL, DeviceStatus } from '@/lib/types'
+import { Device, DEVICE_STATUS_LABEL, DeviceStatus, Profile } from '@/lib/types'
 import { logAuditEvent } from '@/lib/audit-log'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -163,6 +163,19 @@ export default function DevicesPage() {
   const [labelPrintOpen, setLabelPrintOpen] = useState(false)
   const [labelPrintTargets, setLabelPrintTargets] = useState<MeLabelPrintTarget[]>([])
   const [karteDevice, setKarteDevice] = useState<Device | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      setIsAdmin((data as Pick<Profile, 'role'> | null)?.role === 'admin')
+    })
+  }, [supabase])
 
   const fetchDevices = useCallback(async () => {
     const { data, error } = await supabase.from('devices').select('*').order('barcode')
@@ -281,6 +294,11 @@ export default function DevicesPage() {
   ])
 
   async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!isAdmin) {
+      alert('Excel取込は管理者のみ利用できます。')
+      e.target.value = ''
+      return
+    }
     const file = e.target.files?.[0]
     if (!file) return
     setImportBusy(true)
@@ -512,6 +530,10 @@ export default function DevicesPage() {
   }
 
   function openLabelPrint(devs: MeLabelPrintTarget[]) {
+    if (!isAdmin) {
+      alert('ラベル印刷は管理者のみ利用できます。')
+      return
+    }
     const withMe = devs.filter((d) => d.barcode?.trim())
     if (withMe.length === 0) {
       alert('ME No. が設定された機器がありません。')
@@ -542,36 +564,40 @@ export default function DevicesPage() {
           <p className="text-slate-500 text-sm mt-0.5">登録機器の管理・検索</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <input
-            ref={excelImportRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={handleExcelImport}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={importBusy}
-            onClick={() => excelImportRef.current?.click()}
-          >
-            {importBusy ? (
-              <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4 mr-1.5" />
-            )}
-            Excel取込
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={loading || filtered.every((d) => !d.barcode?.trim())}
-            onClick={() => openLabelPrint(filtered)}
-            title="表示中の機器の ME No. ラベルを印刷"
-          >
-            <Printer className="h-4 w-4 mr-1.5" />
-            ラベル印刷
-          </Button>
+          {isAdmin && (
+            <>
+              <input
+                ref={excelImportRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleExcelImport}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={importBusy}
+                onClick={() => excelImportRef.current?.click()}
+              >
+                {importBusy ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-1.5" />
+                )}
+                Excel取込
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || filtered.every((d) => !d.barcode?.trim())}
+                onClick={() => openLabelPrint(filtered)}
+                title="表示中の機器の ME No. ラベルを印刷"
+              >
+                <Printer className="h-4 w-4 mr-1.5" />
+                ラベル印刷
+              </Button>
+            </>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -780,16 +806,18 @@ export default function DevicesPage() {
                       >
                         <Copy className="h-4 w-4 text-slate-400" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openLabelPrint([device])}
-                        className="h-8 w-8 p-0"
-                        title="ME No. ラベル印刷"
-                        disabled={!device.barcode?.trim()}
-                      >
-                        <Printer className="h-4 w-4 text-slate-400" />
-                      </Button>
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openLabelPrint([device])}
+                          className="h-8 w-8 p-0"
+                          title="ME No. ラベル印刷"
+                          disabled={!device.barcode?.trim()}
+                        >
+                          <Printer className="h-4 w-4 text-slate-400" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -863,24 +891,28 @@ export default function DevicesPage() {
               メンテナンスマスタ
             </Link>
             で登録してください（メーカー・型式ごと）。
-            P-touch ラベルは{' '}
-            <button
-              type="button"
-              className="text-blue-600 underline font-medium"
-              disabled={!form.barcode.trim()}
-              onClick={() =>
-                openLabelPrint([
-                  {
-                    barcode: form.barcode.trim(),
-                    name: form.name.trim() || '（未入力）',
-                    location: form.location.trim() || null,
-                  },
-                ])
-              }
-            >
-              ME No. から印刷
-            </button>
-            （要セットアップ: docs/ptouch-setup.md）。
+            {isAdmin && (
+              <>
+                P-touch ラベルは{' '}
+                <button
+                  type="button"
+                  className="text-blue-600 underline font-medium"
+                  disabled={!form.barcode.trim()}
+                  onClick={() =>
+                    openLabelPrint([
+                      {
+                        barcode: form.barcode.trim(),
+                        name: form.name.trim() || '（未入力）',
+                        location: form.location.trim() || null,
+                      },
+                    ])
+                  }
+                >
+                  ME No. から印刷
+                </button>
+                （要セットアップ: docs/ptouch-setup.md）。
+              </>
+            )}
           </p>
           <DialogFooter
             className={cn(
