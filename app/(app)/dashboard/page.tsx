@@ -11,6 +11,7 @@ import {
   getStatusList,
   normalizeDeviceStatus,
 } from '@/lib/types'
+import { getRequestMeNo } from '@/lib/request-display'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -733,6 +734,7 @@ export default function DashboardPage() {
                       <div className="px-3 py-2 space-y-2">
                         {g.requests.map((req) => {
                           const pct = requestProgressPct('repair', req.status, req.repair_route)
+                          const meNo = getRequestMeNo(req)
                           return (
                             <div key={req.id} className="space-y-1.5">
                               <div className="flex items-center justify-between gap-2">
@@ -744,6 +746,9 @@ export default function DashboardPage() {
                               <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
                                 <div className="h-full bg-orange-500 rounded-full" style={{ width: `${pct}%` }} />
                               </div>
+                              {meNo && (
+                                <p className="text-[10px] font-mono text-slate-500">ME No. {meNo}</p>
+                              )}
                               <p className="text-[10px] text-slate-600 line-clamp-1">{req.description}</p>
                             </div>
                           )

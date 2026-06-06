@@ -40,6 +40,7 @@ import { summarizeMaintenanceChecklistRaw, describeMaintenanceChecklistLines } f
 import { downloadCsv, csvFilename } from '@/lib/csv-export'
 import { buildRequestsHistoryCsv, buildMaintenanceHistoryCsv } from '@/lib/export-csv-data'
 import { CompletedRepairRequestDialog } from '@/components/requests/completed-repair-request-dialog'
+import { getRequestEquipmentName, getRequestMeNo } from '@/lib/request-display'
 import { Pencil } from 'lucide-react'
 
 export default function HistoryPage() {
@@ -80,7 +81,8 @@ export default function HistoryPage() {
         r.requester_name.toLowerCase().includes(q) ||
         (r.requester_dept?.toLowerCase().includes(q) ?? false) ||
         (r.requested_equipment?.toLowerCase().includes(q) ?? false) ||
-        (r.reception_ce_name?.toLowerCase().includes(q) ?? false)
+        (r.reception_ce_name?.toLowerCase().includes(q) ?? false) ||
+        (getRequestMeNo(r)?.toLowerCase().includes(q) ?? false)
     }
     return true
   })
@@ -264,6 +266,7 @@ export default function HistoryPage() {
                 <TableHead className="w-24">種別</TableHead>
                 <TableHead>依頼内容</TableHead>
                 <TableHead>依頼者</TableHead>
+                <TableHead className="w-28">ME No.</TableHead>
                 <TableHead>対象機器</TableHead>
                 <TableHead>完了日</TableHead>
                 <TableHead className="w-28 text-right">操作</TableHead>
@@ -272,7 +275,7 @@ export default function HistoryPage() {
             <TableBody>
               {filteredRequests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-10 text-slate-400">
+                  <TableCell colSpan={7} className="text-center py-10 text-slate-400">
                     <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-40" />
                     完了済み依頼がありません
                   </TableCell>
@@ -295,12 +298,11 @@ export default function HistoryPage() {
                     {req.requester_name}
                     {req.requester_dept && <span className="text-slate-400"> ({req.requester_dept})</span>}
                   </TableCell>
+                  <TableCell className="text-sm font-mono text-slate-600">
+                    {req.type === 'repair' ? (getRequestMeNo(req) ?? '—') : '—'}
+                  </TableCell>
                   <TableCell className="text-sm text-slate-600 max-w-[14rem]">
-                    {((): string => {
-                      const dn = (req.devices as { name?: string } | undefined)?.name?.trim()
-                      const rq = req.requested_equipment?.trim()
-                      return dn || rq || '—'
-                    })()}
+                    {getRequestEquipmentName(req) ?? '—'}
                   </TableCell>
                   <TableCell className="text-sm text-slate-500">
                     {format(new Date(req.updated_at), 'yyyy/MM/dd', { locale: ja })}

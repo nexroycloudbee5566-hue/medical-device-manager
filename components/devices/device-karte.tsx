@@ -193,7 +193,7 @@ export function DeviceKarte({ device, onClose, className }: Props) {
             <Wrench className="h-3.5 w-3.5" />
             修理履歴
           </p>
-          <DeviceRepairHistory deviceId={device.id} />
+          <DeviceRepairHistory deviceId={device.id} meNo={device.barcode} />
         </div>
 
         <div>

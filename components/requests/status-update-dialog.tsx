@@ -16,6 +16,7 @@ import {
   isInHouseRepair,
   syncDeviceStatusForRepair,
 } from '@/lib/repair-request'
+import { formatRequestEquipmentWithMeNo, getRequestMeNo } from '@/lib/request-display'
 import {
   coerceEstimateAmount,
   estimatesAmountEqual,
@@ -271,7 +272,17 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
                   受付判定: {RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]}
                 </p>
               )}
-              {(() => {
+              {request.type === 'repair' && (
+                <>
+                  {getRequestMeNo(request) && (
+                    <p className="text-slate-700 font-mono">
+                      ME No. {getRequestMeNo(request)}
+                    </p>
+                  )}
+                  <p>依頼機器: {formatRequestEquipmentWithMeNo(request)}</p>
+                </>
+              )}
+              {request.type !== 'repair' && (() => {
                 const eq =
                   (request.devices as { name?: string } | undefined)?.name?.trim() ||
                   request.requested_equipment?.trim()

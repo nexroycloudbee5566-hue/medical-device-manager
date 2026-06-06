@@ -26,6 +26,7 @@ import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { History, Loader2 } from 'lucide-react'
 import { isInHouseRepair } from '@/lib/repair-request'
+import { formatRequestEquipmentWithMeNo, getRequestMeNo } from '@/lib/request-display'
 
 interface Props {
   request: Request | null
@@ -93,10 +94,7 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
   if (!request) return null
 
   const inHouse = isInHouseRepair(request)
-  const equipmentLabel =
-    (request.devices as { name?: string; barcode?: string } | undefined)?.name?.trim() ||
-    request.requested_equipment?.trim() ||
-    '—'
+  const meNo = getRequestMeNo(request)
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
@@ -113,7 +111,10 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
               )}
               <Badge className="bg-green-100 text-green-800 border-0">完了</Badge>
             </div>
-            <p className="text-slate-600">依頼機器: {equipmentLabel}</p>
+            {meNo && (
+              <p className="text-slate-700 font-mono">ME No. {meNo}</p>
+            )}
+            <p className="text-slate-600">依頼機器: {formatRequestEquipmentWithMeNo(request)}</p>
             <p className="text-slate-600">
               依頼者: {request.requester_name}
               {request.requester_dept ? ` (${request.requester_dept})` : ''}

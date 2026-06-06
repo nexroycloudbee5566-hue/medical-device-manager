@@ -368,7 +368,7 @@ function DailyMaintenancePageContent() {
               )}
               <div>
                 <p className="text-xs font-medium text-slate-500 mb-2">修理履歴</p>
-                <DeviceRepairHistory deviceId={device.id} />
+                <DeviceRepairHistory deviceId={device.id} meNo={device.barcode} />
               </div>
 
               <div>

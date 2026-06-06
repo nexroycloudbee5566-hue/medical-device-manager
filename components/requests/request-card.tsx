@@ -17,6 +17,11 @@ import {
   isInHouseRepair,
   syncDeviceStatusForRepair,
 } from '@/lib/repair-request'
+import {
+  formatRequestEquipmentWithMeNo,
+  getRequestEquipmentName,
+  getRequestMeNo,
+} from '@/lib/request-display'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -200,10 +205,8 @@ export function RequestCard({
   const currentIdx = statusList.indexOf(request.status as never)
   const progress = Math.round(((currentIdx) / (statusList.length - 1)) * 100)
 
-  const equipmentLabel =
-    (request.devices as { name?: string } | undefined)?.name?.trim() ||
-    request.requested_equipment?.trim() ||
-    null
+  const equipmentLabel = getRequestEquipmentName(request)
+  const meNo = getRequestMeNo(request)
 
   const nextButtonLabel =
     nextStatus === '見積受取'
@@ -242,6 +245,9 @@ export function RequestCard({
                     {request.status}
                   </Badge>
                 </div>
+                {request.type === 'repair' && meNo && (
+                  <p className="text-[11px] font-mono text-slate-500 mt-0.5">ME No. {meNo}</p>
+                )}
                 <p className="font-semibold text-slate-800 mt-0.5 truncate">{request.description}</p>
               </div>
             </div>
@@ -287,7 +293,15 @@ export function RequestCard({
                 </Badge>
               </div>
             )}
-            {equipmentLabel && (
+            {request.type === 'repair' && (equipmentLabel || meNo) && (
+              <div className="flex items-start gap-1.5 text-slate-600">
+                <Cpu className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span className="break-words">
+                  依頼機器: {formatRequestEquipmentWithMeNo(request)}
+                </span>
+              </div>
+            )}
+            {request.type !== 'repair' && equipmentLabel && (
               <div className="flex items-start gap-1.5 text-slate-600">
                 <Cpu className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span className="break-words">依頼機器: {equipmentLabel}</span>
