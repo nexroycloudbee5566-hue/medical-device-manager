@@ -398,7 +398,16 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
                 <History className="h-4 w-4" />
                 進行履歴
               </div>
-              <RequestStatusHistory logs={logs} />
+              <RequestStatusHistory
+                logs={logs}
+                editable={request.type === 'repair'}
+                maxHeight="max-h-64"
+                onLogsChange={() => {
+                  void fetchRequestLogs(supabase, request.id).then((rows) => {
+                    setLogs(mergeRegistrationNotes(rows, request.notes))
+                  })
+                }}
+              />
             </div>
           )}
         </div>

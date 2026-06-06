@@ -39,6 +39,8 @@ import { ja } from 'date-fns/locale'
 import { summarizeMaintenanceChecklistRaw, describeMaintenanceChecklistLines } from '@/lib/maintenance-master'
 import { downloadCsv, csvFilename } from '@/lib/csv-export'
 import { buildRequestsHistoryCsv, buildMaintenanceHistoryCsv } from '@/lib/export-csv-data'
+import { CompletedRepairRequestDialog } from '@/components/requests/completed-repair-request-dialog'
+import { Pencil } from 'lucide-react'
 
 export default function HistoryPage() {
   const supabase = createClient()
@@ -53,6 +55,7 @@ export default function HistoryPage() {
   const [dateTo, setDateTo] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingMaintenanceId, setDeletingMaintenanceId] = useState<string | null>(null)
+  const [editingRepairRequest, setEditingRepairRequest] = useState<Request | null>(null)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -159,7 +162,7 @@ export default function HistoryPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">履歴管理</h1>
-          <p className="text-slate-500 text-sm mt-0.5">完了済み依頼・点検履歴の検索・閲覧・削除</p>
+          <p className="text-slate-500 text-sm mt-0.5">完了済み依頼・点検履歴の検索・閲覧・編集・削除</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -263,7 +266,7 @@ export default function HistoryPage() {
                 <TableHead>依頼者</TableHead>
                 <TableHead>対象機器</TableHead>
                 <TableHead>完了日</TableHead>
-                <TableHead className="w-24 text-right">操作</TableHead>
+                <TableHead className="w-28 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -303,21 +306,35 @@ export default function HistoryPage() {
                     {format(new Date(req.updated_at), 'yyyy/MM/dd', { locale: ja })}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
-                      disabled={deletingId === req.id}
-                      onClick={() => deleteCompletedRequest(req)}
-                      aria-label="依頼を削除"
-                    >
-                      {deletingId === req.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
+                    <div className="flex justify-end gap-1">
+                      {req.type === 'repair' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"
+                          onClick={() => setEditingRepairRequest(req)}
+                          aria-label="修理依頼を参照・編集"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                       )}
-                    </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
+                        disabled={deletingId === req.id}
+                        onClick={() => deleteCompletedRequest(req)}
+                        aria-label="依頼を削除"
+                      >
+                        {deletingId === req.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -410,6 +427,15 @@ export default function HistoryPage() {
           </Table>
         </Card>
       )}
+      <CompletedRepairRequestDialog
+        request={editingRepairRequest}
+        open={editingRepairRequest != null}
+        onClose={() => setEditingRepairRequest(null)}
+        onUpdated={() => {
+          setEditingRepairRequest(null)
+          void fetchAll()
+        }}
+      />
     </div>
   )
 }

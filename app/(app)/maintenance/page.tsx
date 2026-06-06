@@ -44,6 +44,7 @@ import {
   intervalMonthsLabel,
 } from '@/lib/inspection-interval'
 import { MaintenanceChecklistRowInput } from '@/components/maintenance-checklist-row-input'
+import { DeviceRepairHistory } from '@/components/devices/device-repair-history'
 
 function MaintenancePageContent() {
   const searchParams = useSearchParams()
@@ -501,6 +502,11 @@ function MaintenancePageContent() {
                   <p className="whitespace-pre-wrap">{device.notes}</p>
                 </div>
               )}
+
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-2">修理履歴</p>
+                <DeviceRepairHistory deviceId={device.id} />
+              </div>
 
               <div>
                 <p className="text-xs font-medium text-slate-500 mb-2">直近の点検記録</p>

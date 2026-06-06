@@ -326,7 +326,13 @@ export function RequestCard({
                 <History className="h-3.5 w-3.5" />
                 進行履歴
               </div>
-              <RequestStatusHistory logs={logs} compact maxHeight="max-h-36" />
+              <RequestStatusHistory
+                logs={logs}
+                compact
+                maxHeight="max-h-36"
+                editable={request.type === 'repair'}
+                onLogsChange={() => void loadLogs()}
+              />
             </div>
           )}
 

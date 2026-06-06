@@ -24,6 +24,39 @@ export async function fetchRequestLogs(
   return (data as RequestLogRow[]) ?? []
 }
 
+export type RequestLogUpdatePayload = {
+  from_status?: string | null
+  to_status?: string
+  handled_by_name?: string | null
+  notes?: string | null
+  created_at?: string
+}
+
+export async function updateRequestLog(
+  supabase: SupabaseClient,
+  logId: string,
+  payload: RequestLogUpdatePayload,
+): Promise<string | null> {
+  const { error } = await supabase.from('request_logs').update(payload).eq('id', logId)
+  if (error) {
+    console.error('[依頼履歴] 更新エラー:', error)
+    return error.message
+  }
+  return null
+}
+
+export async function deleteRequestLog(
+  supabase: SupabaseClient,
+  logId: string,
+): Promise<string | null> {
+  const { error } = await supabase.from('request_logs').delete().eq('id', logId)
+  if (error) {
+    console.error('[依頼履歴] 削除エラー:', error)
+    return error.message
+  }
+  return null
+}
+
 /** 登録時に requests.notes だけに残っている古いデータ向け */
 export function mergeRegistrationNotes(
   logs: RequestLogRow[],
