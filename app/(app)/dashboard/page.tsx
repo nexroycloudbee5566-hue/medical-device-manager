@@ -133,19 +133,19 @@ export default function DashboardPage() {
     noItemsDeviceCount: 0,
     masterDetails: [] as { manufacturer: string; model: string; master_type: string; itemCount: number }[],
     deviceDetails: [] as { name: string; status: string; manufacturer: string; model: string; eligible: boolean; reason: string }[],
+    queryErrors: [] as string[],
   })
   const [diagOpen, setDiagOpen] = useState(false)
 
   const fetchInspectionLists = useCallback(async () => {
     const todayStr = format(new Date(), 'yyyy-MM-dd')
     const [devRes, recRes, dailyRes, masRes] = await Promise.all([
+      // フィルターなしで全件取得し JS 側で除外（PostgREST の .not() との相性問題を回避）
       supabase
         .from('devices')
         .select(
           'id, name, barcode, manufacturer, model, next_maintenance_due, location, department, status',
-        )
-        .not('status', 'eq', 'disposed')
-        .not('status', 'eq', 'inactive'),
+        ),
       supabase
         .from('maintenance_records')
         .select('device_id, completed_date')
@@ -160,12 +160,17 @@ export default function DashboardPage() {
       supabase.from('maintenance_model_masters').select('*'),
     ])
 
-    if (devRes.error)   console.error('[dashboard] devices query error:', devRes.error)
-    if (recRes.error)   console.error('[dashboard] records query error:', recRes.error)
-    if (dailyRes.error) console.error('[dashboard] dailyRecords query error:', dailyRes.error)
-    if (masRes.error)   console.error('[dashboard] masters query error:', masRes.error)
+    const queryErrors: string[] = []
+    if (devRes.error)   { console.error('[dashboard] devices error:', devRes.error);   queryErrors.push(`devices: ${devRes.error.message}`) }
+    if (recRes.error)   { console.error('[dashboard] records error:', recRes.error);   queryErrors.push(`records: ${recRes.error.message}`) }
+    if (dailyRes.error) { console.error('[dashboard] daily error:', dailyRes.error);   queryErrors.push(`daily: ${dailyRes.error.message}`) }
+    if (masRes.error)   { console.error('[dashboard] masters error:', masRes.error);   queryErrors.push(`masters: ${masRes.error.message}`) }
 
-    const devices    = devRes.data
+    // disposed / inactive を JS 側で除外
+    const devices    = (devRes.data ?? []).filter((d: { status: string }) => {
+      const s = normalizeDeviceStatus(d.status)
+      return s !== 'disposed'
+    })
     const records    = recRes.data
     const dailyRecords = dailyRes.data
     const mastersRaw = masRes.data
@@ -290,6 +295,7 @@ export default function DashboardPage() {
       activeDeviceCount: allDevices.filter((d) => normalizeDeviceStatus(d.status) === 'active').length,
       eligibleDeviceCount: eligibleCount,
       noItemsDeviceCount: noItemsCount,
+      queryErrors,
       masterDetails: allMasters.map((m) => ({
         manufacturer: m.manufacturer,
         model: m.model,
@@ -407,8 +413,16 @@ export default function DashboardPage() {
 
       {/* ── 診断パネル ── */}
       {diagOpen && (
-        <div className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs space-y-2 overflow-auto max-h-64">
+        <div className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs space-y-2 overflow-auto max-h-80">
           <p className="font-bold text-amber-900">データ診断（表示されない原因を確認）</p>
+          {diag.queryErrors.length > 0 && (
+            <div className="rounded border border-red-300 bg-red-50 p-2 space-y-1">
+              <p className="font-bold text-red-800">⚠ クエリエラー（これが原因の可能性大）:</p>
+              {diag.queryErrors.map((e, i) => (
+                <p key={i} className="text-red-700 font-mono text-[11px] break-all">{e}</p>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-white rounded border border-amber-200 p-2">
               <p className="text-[10px] text-slate-500">マスタ合計</p>
