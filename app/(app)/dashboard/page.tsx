@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
 import { DashboardMessages } from '@/components/dashboard/dashboard-messages'
+import { DailyInspectionTodayList } from '@/components/maintenance/daily-inspection-today-list'
 import {
   RefreshCw,
   Wrench,
@@ -25,7 +26,6 @@ import {
   ChevronRight,
   CalendarClock,
   CalendarDays,
-  ClipboardCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
@@ -36,12 +36,7 @@ import {
   mapMaintenanceModelMasterRow,
 } from '@/lib/maintenance-master'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
-import { dailyInspectionHref, maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
-import {
-  buildDailyInspectionEntries,
-  DAILY_INSPECTION_RECORD_TYPE,
-  type DailyInspectionEntry,
-} from '@/lib/daily-inspection'
+import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
 import {
   derivePlannedDate,
   getIntervalMonthsForDevice,
@@ -127,7 +122,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [inspectionStale, setInspectionStale] = useState<InspectionListEntry[]>([])
   const [inspectionDueThisMonth, setInspectionDueThisMonth] = useState<InspectionListEntry[]>([])
-  const [dailyInspections, setDailyInspections] = useState<DailyInspectionEntry[]>([])
   const [diag, setDiag] = useState({
     masterCount: -1,
     periodicMasterCount: 0,
@@ -142,8 +136,7 @@ export default function DashboardPage() {
   const [diagOpen, setDiagOpen] = useState(false)
 
   const fetchInspectionLists = useCallback(async () => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd')
-    const [devRes, recRes, dailyRes, masRes] = await Promise.all([
+    const [devRes, recRes, masRes] = await Promise.all([
       // select('*') で全カラム取得（存在しないカラム指定エラーを回避）
       supabase.from('devices').select('*'),
       supabase
@@ -151,19 +144,12 @@ export default function DashboardPage() {
         .select('device_id, completed_date')
         .eq('type', '定期点検')
         .not('completed_date', 'is', null),
-      supabase
-        .from('maintenance_records')
-        .select('device_id, completed_date')
-        .eq('type', DAILY_INSPECTION_RECORD_TYPE)
-        .gte('completed_date', todayStr)
-        .lte('completed_date', todayStr),
       supabase.from('maintenance_model_masters').select('*'),
     ])
 
     const queryErrors: string[] = []
     if (devRes.error)   { console.error('[dashboard] devices error:', devRes.error);   queryErrors.push(`devices: ${devRes.error.message}`) }
     if (recRes.error)   { console.error('[dashboard] records error:', recRes.error);   queryErrors.push(`records: ${recRes.error.message}`) }
-    if (dailyRes.error) { console.error('[dashboard] daily error:', dailyRes.error);   queryErrors.push(`daily: ${dailyRes.error.message}`) }
     if (masRes.error)   { console.error('[dashboard] masters error:', masRes.error);   queryErrors.push(`masters: ${masRes.error.message}`) }
 
     // disposed / inactive を JS 側で除外
@@ -172,7 +158,6 @@ export default function DashboardPage() {
       return s !== 'disposed'
     })
     const records    = recRes.data
-    const dailyRecords = dailyRes.data
     const mastersRaw = masRes.data
 
     const allMasters = (mastersRaw ?? []).map((row) =>
@@ -266,20 +251,6 @@ export default function DashboardPage() {
       return a.lastInspection.localeCompare(b.lastInspection)
     })
 
-    const completedToday = new Set<string>()
-    for (const row of dailyRecords ?? []) {
-      const did = row.device_id as string | null
-      if (did) completedToday.add(did)
-    }
-
-    setDailyInspections(
-      buildDailyInspectionEntries(
-        (devices ?? []) as DailyInspectionEntry['device'][],
-        allMasters,
-        completedToday,
-      ),
-    )
-
     const eligibleCount = allDevices.filter((d) => deviceEligibleForAnnualPlan(masters, d)).length
     const noItemsCount = allDevices.filter((d) => {
       if (!deviceEligibleForAnnualPlan(masters, d)) return false
@@ -359,10 +330,6 @@ export default function DashboardPage() {
   }, [fetchRequests, fetchInspectionLists, supabase])
 
   const currentMonthLabel = format(new Date(), 'yyyy年M月', { locale: ja })
-  const todayLabel = format(new Date(), 'yyyy年M月d日（E）', { locale: ja })
-  const dailyPendingCount = dailyInspections.filter((e) => !e.completedToday).length
-  const dailyDoneCount = dailyInspections.filter((e) => e.completedToday).length
-
   const repairList = useMemo(
     () => requests.filter((r) => r.type === 'repair'),
     [requests],
@@ -487,77 +454,7 @@ export default function DashboardPage() {
         {/* ======= 左列: 点検パネル ======= */}
         <div className="flex flex-col gap-3 min-h-0">
 
-          {/* 日常点検（常時展開） */}
-          <div className="shrink-0 rounded-xl border-l-4 border-l-teal-500 bg-teal-50/35 border border-teal-100 shadow-sm overflow-hidden">
-            <div className="w-full flex items-center justify-between gap-2 px-4 py-2.5 bg-teal-50/80">
-              <span className="flex items-center gap-2 text-sm font-semibold text-teal-950 min-w-0">
-                <ClipboardCheck className="h-4 w-4 text-teal-700 shrink-0" />
-                <span className="truncate">日常点検（{todayLabel}）</span>
-              </span>
-              <Badge variant="outline" className="border-teal-300 text-teal-900 bg-white text-[10px] shrink-0">
-                {loading ? '…' : `未実施 ${dailyPendingCount} / ${dailyInspections.length}`}
-              </Badge>
-            </div>
-            <div className="px-4 py-2 overflow-y-auto max-h-48">
-                {loading ? (
-                  <p className="text-sm text-teal-900/70 py-1">読み込み中…</p>
-                ) : dailyInspections.length === 0 ? (
-                  <div className="text-xs text-teal-900/70 py-1 space-y-1.5">
-                    <p className="font-medium">本日の日常点検対象がありません。</p>
-                    <ul className="space-y-0.5 text-[11px] text-teal-800/80">
-                      {diag.dailyMasterCount === 0 && (
-                        <li className="flex items-start gap-1">
-                          <span className="shrink-0 text-red-500 mt-px">✗</span>
-                          <span>
-                            日常点検マスタ未登録 → 
-                            <Link href="/maintenance/master" className="underline ml-1">マスタ画面の「日常点検」タブ</Link>
-                            で登録してください
-                          </span>
-                        </li>
-                      )}
-                      {diag.dailyMasterCount > 0 && diag.activeDeviceCount === 0 && (
-                        <li className="flex items-start gap-1">
-                          <span className="shrink-0 text-amber-500 mt-px">!</span>
-                          <span>稼働中（ステータス: 利用中）の機器がありません。機器台帳を確認してください。</span>
-                        </li>
-                      )}
-                      {diag.dailyMasterCount > 0 && diag.activeDeviceCount > 0 && (
-                        <li className="flex items-start gap-1">
-                          <span className="shrink-0 text-amber-500 mt-px">!</span>
-                          <span>機器台帳の「メーカー」「型式」と日常点検マスタの値が一致しているか確認してください。</span>
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                ) : (
-                  <ul className="divide-y divide-teal-100 text-sm">
-                    {dailyInspections.map(({ device: dev, items, completedToday }) => (
-                      <li key={dev.id} className="py-2 first:pt-1 flex items-center justify-between gap-2">
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-medium text-slate-900 truncate text-xs">{dev.name}</span>
-                            <Badge className={cn('text-[9px] border-0 px-1 py-0',
-                              completedToday ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900')}>
-                              {completedToday ? '完了' : '未実施'}
-                            </Badge>
-                          </div>
-                          <p className="text-[10px] text-slate-500 truncate">
-                            {[dev.location, items.map(i => i.label).join('・')].filter(Boolean).join(' / ')}
-                          </p>
-                        </div>
-                        <Link
-                          href={dailyInspectionHref(dev)}
-                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }),
-                            'shrink-0 h-6 text-[10px] px-2 border-teal-200 text-teal-900')}
-                        >
-                          {completedToday ? '再記録' : '点検へ'}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-            </div>
-          </div>
+          <DailyInspectionTodayList compact className="shrink-0" />
 
           {/* 今月の定期点検（flex-1、内部スクロール） */}
           <div className="flex-1 min-h-0 flex flex-col rounded-xl border-l-4 border-l-blue-500 bg-blue-50/35 border border-blue-100 shadow-sm overflow-hidden">

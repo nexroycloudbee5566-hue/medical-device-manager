@@ -45,6 +45,7 @@ import {
 } from '@/lib/daily-inspection'
 import { MaintenanceChecklistRowInput } from '@/components/maintenance-checklist-row-input'
 import { DeviceRepairHistory } from '@/components/devices/device-repair-history'
+import { DailyInspectionTodayList } from '@/components/maintenance/daily-inspection-today-list'
 
 function DailyMaintenancePageContent() {
   const searchParams = useSearchParams()
@@ -288,6 +289,8 @@ function DailyMaintenancePageContent() {
           メンテナンスマスタ
         </Link>
       </div>
+
+      <DailyInspectionTodayList />
 
       <Card className="border-0 shadow-sm bg-teal-50">
         <CardContent className="pt-4 pb-4">

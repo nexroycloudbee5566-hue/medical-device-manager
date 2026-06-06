@@ -23,6 +23,7 @@ import {
   CalendarRange,
   ScrollText,
   BookOpen,
+  ClipboardCheck,
 } from 'lucide-react'
 
 const navItems = [
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/maintenance/master', label: 'メンテナンスマスタ', icon: ClipboardList, match: (p: string) => p.startsWith('/maintenance/master') },
   { href: '/maintenance/annual', label: '年間メンテ計画', icon: CalendarRange, match: (p: string) => p.startsWith('/maintenance/annual') },
   { href: '/maintenance', label: '定期点検', icon: Wrench, match: (p: string) => p === '/maintenance' },
+  { href: '/maintenance/daily', label: '日常点検', icon: ClipboardCheck, match: (p: string) => p.startsWith('/maintenance/daily') },
   { href: '/history', label: '履歴管理', icon: History, match: (p: string) => p.startsWith('/history') },
   { href: '/manual', label: '使い方マニュアル', icon: BookOpen, match: (p: string) => p.startsWith('/manual') },
 ]
