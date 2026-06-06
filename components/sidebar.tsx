@@ -28,15 +28,15 @@ import {
 
 const navItems = [
   { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard, match: (p: string) => p === '/dashboard' },
-  { href: '/requests/repair', label: '修理依頼', icon: Hammer, match: (p: string) => p.startsWith('/requests/repair') },
-  { href: '/requests/purchase', label: '購入依頼', icon: ShoppingCart, match: (p: string) => p.startsWith('/requests/purchase') },
-  { href: '/devices', label: '機器台帳', icon: Cpu, match: (p: string) => p.startsWith('/devices') },
-  { href: '/maintenance/master', label: 'メンテナンスマスタ', icon: ClipboardList, match: (p: string) => p.startsWith('/maintenance/master') },
-  { href: '/maintenance/annual', label: '年間メンテ計画', icon: CalendarRange, match: (p: string) => p.startsWith('/maintenance/annual') },
-  { href: '/maintenance', label: '定期点検', icon: Wrench, match: (p: string) => p === '/maintenance' },
-  { href: '/maintenance/daily', label: '日常点検', icon: ClipboardCheck, match: (p: string) => p.startsWith('/maintenance/daily') },
-  { href: '/history', label: '履歴管理', icon: History, match: (p: string) => p.startsWith('/history') },
   { href: '/manual', label: '使い方マニュアル', icon: BookOpen, match: (p: string) => p.startsWith('/manual') },
+  { href: '/devices', label: '機器台帳', icon: Cpu, match: (p: string) => p.startsWith('/devices') },
+  { href: '/maintenance/daily', label: '日常点検', icon: ClipboardCheck, match: (p: string) => p.startsWith('/maintenance/daily') },
+  { href: '/maintenance', label: '定期点検', icon: Wrench, match: (p: string) => p === '/maintenance' },
+  { href: '/maintenance/annual', label: '年間メンテ計画', icon: CalendarRange, match: (p: string) => p.startsWith('/maintenance/annual') },
+  { href: '/requests/purchase', label: '購入依頼', icon: ShoppingCart, match: (p: string) => p.startsWith('/requests/purchase') },
+  { href: '/requests/repair', label: '修理依頼', icon: Hammer, match: (p: string) => p.startsWith('/requests/repair') },
+  { href: '/maintenance/master', label: 'メンテナンスマスタ', icon: ClipboardList, match: (p: string) => p.startsWith('/maintenance/master') },
+  { href: '/history', label: '履歴管理', icon: History, match: (p: string) => p.startsWith('/history') },
 ]
 
 interface SidebarProps {
