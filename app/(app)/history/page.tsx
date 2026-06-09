@@ -41,6 +41,7 @@ import { summarizeMaintenanceChecklistRaw, describeMaintenanceChecklistLines } f
 import { downloadCsv, csvFilename } from '@/lib/csv-export'
 import { buildRequestsHistoryCsv, buildMaintenanceHistoryCsv } from '@/lib/export-csv-data'
 import { CompletedRepairRequestDialog } from '@/components/requests/completed-repair-request-dialog'
+import { MaintenanceRecordEditDialog } from '@/components/maintenance/maintenance-record-edit-dialog'
 import { getRequestEquipmentName, getRequestMeNo } from '@/lib/request-display'
 import { Pencil } from 'lucide-react'
 
@@ -58,6 +59,7 @@ export default function HistoryPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingMaintenanceId, setDeletingMaintenanceId] = useState<string | null>(null)
   const [editingRepairRequest, setEditingRepairRequest] = useState<Request | null>(null)
+  const [editingMaintenanceRecord, setEditingMaintenanceRecord] = useState<MaintenanceRecord | null>(null)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -419,21 +421,33 @@ export default function HistoryPage() {
                         {rec.notes?.trim() ? rec.notes : '—'}
                       </TableCell>
                       <TableCell className="text-right align-top">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
-                          disabled={deletingMaintenanceId === rec.id}
-                          onClick={() => void deleteMaintenanceRecord(rec)}
-                          aria-label="点検記録を削除"
-                        >
-                          {deletingMaintenanceId === rec.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"
+                            onClick={() => setEditingMaintenanceRecord(rec)}
+                            aria-label="点検記録を編集"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-slate-400 hover:text-red-600"
+                            disabled={deletingMaintenanceId === rec.id}
+                            onClick={() => void deleteMaintenanceRecord(rec)}
+                            aria-label="点検記録を削除"
+                          >
+                            {deletingMaintenanceId === rec.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -448,6 +462,15 @@ export default function HistoryPage() {
         onClose={() => setEditingRepairRequest(null)}
         onUpdated={() => {
           setEditingRepairRequest(null)
+          void fetchAll()
+        }}
+      />
+      <MaintenanceRecordEditDialog
+        record={editingMaintenanceRecord}
+        open={editingMaintenanceRecord != null}
+        onClose={() => setEditingMaintenanceRecord(null)}
+        onUpdated={() => {
+          setEditingMaintenanceRecord(null)
           void fetchAll()
         }}
       />
