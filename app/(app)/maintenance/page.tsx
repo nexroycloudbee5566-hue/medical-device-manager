@@ -46,6 +46,7 @@ import {
 } from '@/lib/inspection-interval'
 import { MaintenanceChecklistRowInput } from '@/components/maintenance-checklist-row-input'
 import { DeviceRepairHistory } from '@/components/devices/device-repair-history'
+import { PeriodicInspectionDueList } from '@/components/maintenance/periodic-inspection-due-list'
 
 function MaintenancePageContent() {
   const searchParams = useSearchParams()
@@ -342,6 +343,8 @@ function MaintenancePageContent() {
           メンテナンスマスタ
         </Link>
       </div>
+
+      <PeriodicInspectionDueList />
 
       <Card className="border-0 shadow-sm bg-blue-50">
         <CardContent className="pt-4 pb-4">

@@ -37,15 +37,8 @@ import {
 } from '@/lib/maintenance-master'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
 import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
-import {
-  derivePlannedDate,
-  getIntervalMonthsForDevice,
-  isInspectionStale,
-  inspectionDueDate,
-  intervalMonthsLabel,
-  isPlannedInMonth,
-  completedInspectionInMonth,
-} from '@/lib/inspection-interval'
+import { intervalMonthsLabel } from '@/lib/inspection-interval'
+import { mapPeriodicInspectionRows } from '@/lib/periodic-inspection-lists'
 
 type InspectionDeviceRow = Pick<
   Device,
@@ -171,85 +164,13 @@ export default function DashboardPage() {
       `[${m.master_type}] ${m.manufacturer}|${m.model} items=${m.checklist_items.length}`))
 
     const masters = filterPeriodicMasters(allMasters)
-
-    const latestByDevice = new Map<string, string>()
-    for (const row of records ?? []) {
-      const did = row.device_id as string | null
-      const cd = row.completed_date as string | null
-      if (!did || !cd) continue
-      const prev = latestByDevice.get(did)
-      if (!prev || cd > prev) latestByDevice.set(did, cd.slice(0, 10))
-    }
-
-    const today = startOfDay(new Date())
-    const stale: InspectionListEntry[] = []
-    const dueMonth: InspectionListEntry[] = []
     const allDevices = (devices ?? []) as (InspectionDeviceRow & { status: string })[]
 
-    console.log('[dashboard] 機器件数(廃棄・休止除く):', allDevices.length,
-      '/ active:', allDevices.filter((d) => normalizeDeviceStatus(d.status) === 'active').length)
-    console.log('[dashboard] 機器一覧:', allDevices.map((d) =>
-      `${d.name}|status=${d.status}(→${normalizeDeviceStatus(d.status)})|${d.manufacturer}|${d.model}`))
-
-    for (const dev of allDevices) {
-      const eligible = deviceEligibleForAnnualPlan(masters, dev)
-      if (!eligible) {
-        const normalStatus = normalizeDeviceStatus(dev.status)
-        const reason = normalStatus !== 'active'
-          ? `status=${dev.status}(${normalStatus})`
-          : !dev.model
-            ? 'model未設定'
-            : `マスタ不一致(${dev.manufacturer}|${dev.model})`
-        console.log(`[dashboard] スキップ: ${dev.name} → ${reason}`)
-        continue
-      }
-
-      const last = latestByDevice.get(dev.id) ?? null
-      const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
-      const plannedDate = derivePlannedDate(
-        dev.next_maintenance_due,
-        last,
-        intervalMonths,
-      )
-
-      const entry: InspectionListEntry = {
-        device: dev,
-        lastInspection: last,
-        intervalMonths,
-        plannedDate,
-      }
-
-      const hasItems = deviceHasInspectionMaster(masters, dev)
-      const staleFlag = isInspectionStale(last, intervalMonths, dev.next_maintenance_due, today)
-      const monthFlag = isPlannedInMonth(plannedDate, today) && !completedInspectionInMonth(last, today)
-      console.log(`[dashboard] 対象: ${dev.name} | hasItems=${hasItems} stale=${staleFlag} dueThisMonth=${monthFlag} interval=${intervalMonths}ヶ月 last=${last ?? 'なし'} planned=${plannedDate ?? 'なし'}`)
-
-      if (monthFlag) {
-        dueMonth.push(entry)
-      }
-
-      if (
-        normalizeDeviceStatus(dev.status) === 'active' &&
-        hasItems &&
-        staleFlag
-      ) {
-        const dueDate =
-          dev.next_maintenance_due?.slice(0, 10) ?? inspectionDueDate(last, intervalMonths)
-        stale.push({ ...entry, plannedDate: dueDate })
-      }
-    }
-
-    const byPlanned = (a: InspectionListEntry, b: InspectionListEntry) =>
-      (a.plannedDate ?? '9999-12-31').localeCompare(b.plannedDate ?? '9999-12-31')
-
-    dueMonth.sort(byPlanned)
-    stale.sort((a, b) => {
-      if (a.lastInspection === null && b.lastInspection === null)
-        return a.device.name.localeCompare(b.device.name, 'ja')
-      if (a.lastInspection === null) return -1
-      if (b.lastInspection === null) return 1
-      return a.lastInspection.localeCompare(b.lastInspection)
-    })
+    const { dueThisMonth: dueMonth, stale } = mapPeriodicInspectionRows(
+      allDevices,
+      mastersRaw as Record<string, unknown>[] | null,
+      records,
+    )
 
     const eligibleCount = allDevices.filter((d) => deviceEligibleForAnnualPlan(masters, d)).length
     const noItemsCount = allDevices.filter((d) => {
