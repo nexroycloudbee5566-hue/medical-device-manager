@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export function DashboardMessages() {
+export function DashboardMessages({ compact = false }: { compact?: boolean }) {
   const supabase = useMemo(() => createClient(), [])
   const [messages, setMessages] = useState<DashboardMessage[]>([])
   const [inbox, setInbox] = useState<AdminInboxMessage[]>([])
@@ -286,23 +286,85 @@ export function DashboardMessages() {
 
   if (tableMissing) {
     return (
-      <div className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <div className={cn(
+        'shrink-0 rounded-lg border border-amber-300 bg-amber-50 text-sm text-amber-900',
+        compact ? 'px-3 py-2 text-xs' : 'px-4 py-3',
+      )}>
         <p className="font-medium">お知らせ機能を使うには DB マイグレーションが必要です。</p>
-        <p className="text-xs mt-1 text-amber-800">
-          Supabase SQL Editor で{' '}
-          <code className="bg-amber-100 px-1 rounded">migration_dashboard_messages.sql</code> を実行してください。
-        </p>
+        {!compact && (
+          <p className="text-xs mt-1 text-amber-800">
+            Supabase SQL Editor で{' '}
+            <code className="bg-amber-100 px-1 rounded">migration_dashboard_messages.sql</code> を実行してください。
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  if (compact && !loading && messages.length === 0 && !composerOpen && !isAdmin) {
+    return (
+      <div className="shrink-0 flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs border-violet-200 text-violet-800"
+          onClick={() => setStaffDialogOpen(true)}
+        >
+          <MessageSquare className="h-3.5 w-3.5 mr-1" />
+          管理者へメッセージ
+        </Button>
+      </div>
+    )
+  }
+
+  if (
+    compact &&
+    !loading &&
+    messages.length === 0 &&
+    !composerOpen &&
+    isAdmin &&
+    inbox.length === 0 &&
+    !inboxLoading
+  ) {
+    return (
+      <div className="shrink-0 flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs border-violet-200 text-violet-800"
+          onClick={() => setComposerOpen(true)}
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          お知らせを投稿
+        </Button>
       </div>
     )
   }
 
   return (
     <>
-      <div className="shrink-0 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50/80 to-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-violet-100 bg-violet-50/60">
-          <span className="flex items-center gap-2 text-sm font-semibold text-violet-950">
-            <Megaphone className="h-4 w-4 text-violet-600" />
-            管理者からのお知らせ
+      <div
+        className={cn(
+          'shrink-0 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50/80 to-white shadow-sm overflow-hidden flex flex-col',
+          compact && 'max-h-28',
+        )}
+      >
+        <div
+          className={cn(
+            'flex items-center justify-between gap-2 border-b border-violet-100 bg-violet-50/60 shrink-0',
+            compact ? 'px-3 py-1.5' : 'px-4 py-2.5',
+          )}
+        >
+          <span
+            className={cn(
+              'flex items-center gap-2 font-semibold text-violet-950',
+              compact ? 'text-xs' : 'text-sm',
+            )}
+          >
+            <Megaphone className={cn('text-violet-600', compact ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
+            お知らせ
           </span>
           <div className="flex items-center gap-2">
             {!isAdmin && (
@@ -332,7 +394,12 @@ export function DashboardMessages() {
           </div>
         </div>
 
-        <div className="px-4 py-3 space-y-3 max-h-40 overflow-y-auto">
+        <div
+          className={cn(
+            'overflow-y-auto space-y-2 shrink min-h-0',
+            compact ? 'px-3 py-2 max-h-20' : 'px-4 py-3 space-y-3 max-h-40',
+          )}
+        >
           {loading ? (
             <p className="text-sm text-slate-400 flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -448,11 +515,21 @@ export function DashboardMessages() {
         </div>
 
         {isAdmin && (
-          <div className="border-t border-violet-100 bg-slate-50/50">
-            <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-violet-100/80">
-              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <Mail className="h-4 w-4 text-blue-600" />
-                スタッフからのメッセージ
+          <div className={cn('border-t border-violet-100 bg-slate-50/50 shrink-0', compact && 'max-h-20 overflow-y-auto')}>
+            <div
+              className={cn(
+                'flex items-center justify-between gap-2 border-b border-violet-100/80',
+                compact ? 'px-3 py-1' : 'px-4 py-2',
+              )}
+            >
+              <span
+                className={cn(
+                  'flex items-center gap-2 font-semibold text-slate-800',
+                  compact ? 'text-xs' : 'text-sm',
+                )}
+              >
+                <Mail className={cn('text-blue-600', compact ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
+                受信箱
                 {unreadCount > 0 && (
                   <Badge className="bg-red-500 text-white border-0 text-[10px] h-5 px-1.5">
                     未読 {unreadCount}
@@ -460,7 +537,7 @@ export function DashboardMessages() {
                 )}
               </span>
             </div>
-            <div className="px-4 py-3 space-y-2 max-h-44 overflow-y-auto">
+            <div className={cn('space-y-2 overflow-y-auto', compact ? 'px-3 py-2 max-h-16' : 'px-4 py-3 max-h-44')}>
               {inboxTableMissing ? (
                 <p className="text-xs text-amber-800">
                   <code className="bg-amber-100 px-1 rounded">migration_admin_inbox_messages.sql</code>{' '}

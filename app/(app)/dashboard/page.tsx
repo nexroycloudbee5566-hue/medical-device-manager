@@ -1,29 +1,25 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, type ComponentType, type ReactNode } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
   type Device,
-  type MaintenanceModelMaster,
   type Request,
   type RequestType,
   getStatusList,
   normalizeDeviceStatus,
 } from '@/lib/types'
-import { getRequestMeNo } from '@/lib/request-display'
+
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
 import { DashboardMessages } from '@/components/dashboard/dashboard-messages'
 import { DailyInspectionTodayList } from '@/components/maintenance/daily-inspection-today-list'
 import {
   RefreshCw,
-  Wrench,
   ShoppingCart,
   Hammer,
-  ChevronRight,
   CalendarClock,
   CalendarDays,
 } from 'lucide-react'
@@ -107,6 +103,60 @@ function groupRequests(
   }))
   out.sort((a, b) => a.label.localeCompare(b.label, 'ja'))
   return out
+}
+
+function formatYmdShort(ymd: string | null | undefined): string {
+  if (!ymd) return '—'
+  return ymd.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')
+}
+
+function DashboardPanel({
+  title,
+  icon: Icon,
+  iconClass,
+  borderClass,
+  headerBg,
+  badge,
+  headerExtra,
+  children,
+  className,
+}: {
+  title: string
+  icon: ComponentType<{ className?: string }>
+  iconClass: string
+  borderClass: string
+  headerBg: string
+  badge?: ReactNode
+  headerExtra?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'min-h-0 flex flex-col rounded-lg border-l-4 shadow-sm overflow-hidden border border-slate-200/80',
+        borderClass,
+        className,
+      )}
+    >
+      <div
+        className={cn(
+          'shrink-0 flex items-center justify-between gap-1.5 px-2.5 py-1.5 border-b',
+          headerBg,
+        )}
+      >
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 min-w-0">
+          <Icon className={cn('h-3.5 w-3.5 shrink-0', iconClass)} />
+          <span className="truncate">{title}</span>
+        </span>
+        <span className="flex items-center gap-1.5 shrink-0">
+          {badge}
+          {headerExtra}
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1">{children}</div>
+    </div>
+  )
 }
 
 export default function DashboardPage() {
@@ -270,41 +320,41 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="h-full flex flex-col p-3 gap-3 overflow-hidden">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden p-2 gap-1.5 max-w-3xl mx-auto w-full">
 
-      {/* ── ヘッダー行（サマリーチップ付き） ── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <h1 className="text-xl font-bold text-slate-800">ダッシュボード</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-slate-400">進行中依頼</span>
-          <Badge variant="secondary" className="text-xs">合計 {requests.length}</Badge>
-          <Badge className="text-xs bg-orange-100 text-orange-800 border-0 hover:bg-orange-100">
-            <Wrench className="h-3 w-3 mr-1" />修理 {repairList.length}
+      {/* ── ヘッダー ── */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 shrink-0">
+        <h1 className="text-base font-bold text-slate-800">ダッシュボード</h1>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+            依頼 {requests.length}
           </Badge>
-          <Badge className="text-xs bg-green-100 text-green-800 border-0 hover:bg-green-100">
-            <ShoppingCart className="h-3 w-3 mr-1" />購入 {purchaseList.length}
+          <Badge className="text-[10px] h-5 px-1.5 bg-orange-100 text-orange-800 border-0 hover:bg-orange-100">
+            修理 {repairList.length}
           </Badge>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={fetchRequests}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+          <Badge className="text-[10px] h-5 px-1.5 bg-green-100 text-green-800 border-0 hover:bg-green-100">
+            購入 {purchaseList.length}
+          </Badge>
+          <Button variant="outline" size="sm" className="h-6 text-[10px] px-2" onClick={fetchRequests}>
+            <RefreshCw className="h-3 w-3 mr-1" />
             更新
           </Button>
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs text-slate-500 border-dashed"
+            className="h-6 text-[10px] px-2 text-slate-500 border-dashed"
             onClick={() => setDiagOpen((v) => !v)}
           >
-            🔍 診断
+            診断
           </Button>
         </div>
       </div>
 
-      {/* ── 管理者お知らせ ── */}
-      <DashboardMessages />
+      <DashboardMessages compact />
 
       {/* ── 診断パネル ── */}
       {diagOpen && (
-        <div className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs space-y-2 overflow-auto max-h-80">
+        <div className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs space-y-2 overflow-auto max-h-48">
           <p className="font-bold text-amber-900">データ診断（表示されない原因を確認）</p>
           {diag.queryErrors.length > 0 && (
             <div className="rounded border border-red-300 bg-red-50 p-2 space-y-1">
@@ -369,268 +419,213 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── メイングリッド ── */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] gap-3">
+      {/* ── メイングリッド（2列・画面内スクロール） ── */}
+      <div className="flex-1 min-h-0 grid grid-cols-2 gap-1.5">
 
-        {/* ======= 左列: 点検パネル ======= */}
-        <div className="flex flex-col gap-3 min-h-0 min-w-0">
+        {/* 左: 点検 */}
+        <div className="min-h-0 flex flex-col gap-1.5">
+          <DailyInspectionTodayList compact fill className="flex-[0.75] min-h-0" />
 
-          <DailyInspectionTodayList compact className="shrink-0" listClassName="max-h-36" />
-
-          {/* 今月の定期点検 */}
-          <div className="flex-[1.35] min-h-[10rem] flex flex-col rounded-xl border-l-4 border-l-blue-500 bg-blue-50/35 border border-blue-100 shadow-sm overflow-hidden">
-            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-blue-50/80 border-b border-blue-100">
-              <span className="flex items-center gap-2 text-sm font-semibold text-blue-950 min-w-0">
-                <CalendarDays className="h-4 w-4 text-blue-700 shrink-0" />
-                <span className="truncate">{currentMonthLabel}の定期点検</span>
-              </span>
-              <span className="flex items-center gap-2 shrink-0">
-                <Badge variant="outline" className="border-blue-300 text-blue-900 bg-white text-[10px]">
-                  {loading ? '…' : `${inspectionDueThisMonth.length} 件`}
-                </Badge>
-                <Link href="/maintenance/annual" className="text-[10px] text-blue-700 underline">
-                  年間計画
-                </Link>
-              </span>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2">
-              {loading ? (
-                <p className="text-sm text-blue-900/70 py-2">読み込み中…</p>
-              ) : inspectionDueThisMonth.length === 0 ? (
-                <div className="text-sm text-blue-900/70 py-2 space-y-1.5">
-                  <p>今月予定の定期点検はありません。</p>
-                  {diag.masterCount === 0 && (
-                    <p className="text-[11px] text-blue-800/80">
-                      ⚠ 定期点検マスタが0件です。
-                      <Link href="/maintenance/master" className="underline ml-1">マスタ画面</Link>
-                      で「定期点検」タブに機器を登録してください。
-                    </p>
-                  )}
-                  {diag.periodicMasterCount > 0 && inspectionStale.length === 0 && (
-                    <p className="text-[11px] text-blue-800/80">
-                      期間超過・未実施も0件です。機器台帳の「メーカー」「型式」とマスタが一致しているか確認してください。
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <ul className="divide-y divide-blue-100 text-sm">
-                  {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => (
-                    <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
-                          {dev.location || [dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
-                        </p>
-                        <p className="text-[10px] text-blue-900 font-medium">
-                          予定: {plannedDate?.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3') ?? '—'}
-                          {lastInspection && (
-                            <span className="text-slate-500 font-normal ml-1">
-                              · 前回: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <Link
-                        href={maintenanceInspectionHref(dev)}
-                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
-                      >
-                        点検へ
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
-          {/* 期間超過・未実施 */}
-          <div className="flex-[1.35] min-h-[10rem] flex flex-col rounded-xl border-l-4 border-l-amber-500 bg-amber-50/35 border border-amber-100 shadow-sm overflow-hidden">
-            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-amber-50/80 border-b border-amber-100">
-              <span className="flex items-center gap-2 text-sm font-semibold text-amber-950 min-w-0">
-                <CalendarClock className="h-4 w-4 text-amber-700 shrink-0" />
-                <span className="truncate">期間超過・未実施</span>
-              </span>
-              <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white text-[10px] shrink-0">
-                {loading ? '…' : `${inspectionStale.length} 件`}
+          <DashboardPanel
+            className="flex-1 min-h-0 bg-blue-50/30 border-l-blue-500"
+            title={`${currentMonthLabel}の定期点検`}
+            icon={CalendarDays}
+            iconClass="text-blue-700"
+            borderClass="border-l-blue-500"
+            headerBg="bg-blue-50/80 border-blue-100"
+            badge={
+              <Badge variant="outline" className="border-blue-300 text-blue-900 bg-white text-[9px] h-4 px-1">
+                {loading ? '…' : `${inspectionDueThisMonth.length}`}
               </Badge>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2">
-              {loading ? (
-                <p className="text-sm text-amber-900/70 py-2">読み込み中…</p>
-              ) : inspectionStale.length === 0 ? (
-                <div className="text-sm text-amber-900/70 py-2 space-y-1.5">
-                  <p>期間超過・未実施の機器はありません。</p>
-                  {diag.masterCount !== -1 && diag.periodicMasterCount === 0 && (
-                    <p className="text-[11px] text-amber-800/80">
-                      ⚠ 定期点検マスタ未登録。
-                      <Link href="/maintenance/master" className="underline ml-1">マスタ画面</Link>
-                      でメーカー・型式マスタを登録してください（点検項目が1件以上必要です）。
-                    </p>
-                  )}
-                  {diag.periodicMasterCount > 0 && diag.activeDeviceCount === 0 && (
-                    <p className="text-[11px] text-amber-800/80">
-                      ⚠ 稼働中（利用中）の機器がありません。機器台帳のステータスを確認してください。
-                    </p>
-                  )}
-                  {diag.periodicMasterCount > 0 && diag.activeDeviceCount > 0 && (
-                    <p className="text-[11px] text-amber-800/80">
-                      機器台帳の「メーカー」「型式」と定期点検マスタの値が一致しているか確認してください。
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <ul className="divide-y divide-amber-100 text-sm">
-                  {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, plannedDate: dueDate }) => (
-                    <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
-                          {[dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
-                        </p>
-                        <p className="text-[10px] text-amber-900 font-medium">
-                          {intervalMonthsLabel(intervalMonths)}サイクル
-                          {lastInspection === null ? (
-                            dueDate
-                              ? <> · 次回予定: {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}（未点検）</>
-                              : <> · 点検記録なし</>
-                          ) : (
-                            <>
-                              {' '}· 最終: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                              {dueDate && (
-                                <> · 期限: {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                                {formatMonthsPastDueLabel(dueDate) && (
-                                  <>（{formatMonthsPastDueLabel(dueDate)}）</>
-                                )}</>
-                              )}
-                            </>
-                          )}
-                        </p>
-                      </div>
-                      <Link
-                        href={maintenanceInspectionHref(dev)}
-                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
-                      >
-                        点検へ
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
+            }
+            headerExtra={
+              <Link href="/maintenance/annual" className="text-[9px] text-blue-700 underline">
+                計画
+              </Link>
+            }
+          >
+            {loading ? (
+              <p className="text-[11px] text-blue-900/70 py-1">読み込み中…</p>
+            ) : inspectionDueThisMonth.length === 0 ? (
+              <p className="text-[11px] text-blue-900/70 py-1">今月予定なし</p>
+            ) : (
+              <ul className="divide-y divide-blue-100">
+                {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => (
+                  <li key={dev.id} className="py-1 flex items-center justify-between gap-1">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-900 truncate text-[11px]">{dev.name}</p>
+                      <p className="text-[9px] text-blue-900 truncate">
+                        {formatYmdShort(plannedDate)}
+                        {lastInspection && (
+                          <span className="text-slate-500"> · {formatYmdShort(lastInspection)}</span>
+                        )}
+                      </p>
+                    </div>
+                    <Link
+                      href={maintenanceInspectionHref(dev)}
+                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-5 text-[9px] px-1.5')}
+                    >
+                      点検
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </DashboardPanel>
+
+          <DashboardPanel
+            className="flex-1 min-h-0 bg-amber-50/30 border-l-amber-500"
+            title="期限超過・未実施"
+            icon={CalendarClock}
+            iconClass="text-amber-700"
+            borderClass="border-l-amber-500"
+            headerBg="bg-amber-50/80 border-amber-100"
+            badge={
+              <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white text-[9px] h-4 px-1">
+                {loading ? '…' : `${inspectionStale.length}`}
+              </Badge>
+            }
+          >
+            {loading ? (
+              <p className="text-[11px] text-amber-900/70 py-1">読み込み中…</p>
+            ) : inspectionStale.length === 0 ? (
+              <p className="text-[11px] text-amber-900/70 py-1">該当なし</p>
+            ) : (
+              <ul className="divide-y divide-amber-100">
+                {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, plannedDate: dueDate }) => (
+                  <li key={dev.id} className="py-1 flex items-center justify-between gap-1">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-900 truncate text-[11px]">{dev.name}</p>
+                      <p className="text-[9px] text-amber-900 truncate">
+                        {intervalMonthsLabel(intervalMonths)}
+                        {dueDate && (
+                          <>
+                            {' '}
+                            · {formatYmdShort(dueDate)}
+                            {formatMonthsPastDueLabel(dueDate) && (
+                              <span> ({formatMonthsPastDueLabel(dueDate)})</span>
+                            )}
+                          </>
+                        )}
+                        {lastInspection === null && !dueDate && ' · 未点検'}
+                      </p>
+                    </div>
+                    <Link
+                      href={maintenanceInspectionHref(dev)}
+                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-5 text-[9px] px-1.5')}
+                    >
+                      点検
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </DashboardPanel>
         </div>
 
-        {/* ======= 右列: 依頼パネル（コンパクト） ======= */}
-        <div className="flex flex-col gap-3 min-h-0 min-w-0 lg:justify-start">
-
-          {/* 修理依頼 */}
-          <div className="flex-none max-h-[min(28vh,13rem)] flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
-            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-orange-50/60 border-b border-orange-100">
-              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <Hammer className="h-4 w-4 text-orange-600 shrink-0" />
-                修理依頼 — 機器別
-              </span>
+        {/* 右: 依頼 */}
+        <div className="min-h-0 flex flex-col gap-1.5">
+          <DashboardPanel
+            className="flex-1 min-h-0 bg-white"
+            title="修理依頼"
+            icon={Hammer}
+            iconClass="text-orange-600"
+            borderClass="border-l-orange-500"
+            headerBg="bg-orange-50/60 border-orange-100"
+            headerExtra={
               <Link
                 href="/requests/repair"
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-6 text-[10px] px-2 gap-0.5')}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-5 text-[9px] px-1.5')}
               >
-                一覧へ <ChevronRight className="h-3 w-3" />
+                一覧
               </Link>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 py-2">
-              {repairList.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">進行中の修理依頼はありません</p>
-              ) : (
-                <div className="space-y-2">
-                  {repairGroups.map((g) => (
-                    <div key={g.key} className="rounded-lg border border-slate-100 overflow-hidden">
-                      <div className="px-3 py-2 bg-orange-50/60 border-b border-orange-100">
-                        <p className="text-xs font-semibold text-slate-800 leading-snug">{g.label}</p>
-                        <p className="text-[10px] text-slate-500">進行中 {g.requests.length} 件</p>
-                      </div>
-                      <div className="px-3 py-2 space-y-2">
-                        {g.requests.map((req) => {
-                          const pct = requestProgressPct('repair', req.status, req.repair_route)
-                          const meNo = getRequestMeNo(req)
-                          return (
-                            <div key={req.id} className="space-y-1.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <Badge className={`text-[10px] font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}>
-                                  {req.status}
-                                </Badge>
-                                <span className="text-[10px] text-slate-400 tabular-nums">{pct}%</span>
-                              </div>
-                              <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
-                                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${pct}%` }} />
-                              </div>
-                              {meNo && (
-                                <p className="text-[10px] font-mono text-slate-500">ME No. {meNo}</p>
-                              )}
-                              <p className="text-[10px] text-slate-600 line-clamp-1">{req.description}</p>
-                            </div>
-                          )
-                        })}
-                      </div>
+            }
+          >
+            {repairList.length === 0 ? (
+              <p className="text-[11px] text-slate-400 text-center py-3">進行中なし</p>
+            ) : (
+              <div className="space-y-1.5">
+                {repairGroups.map((g) => (
+                  <div key={g.key} className="rounded border border-slate-100 overflow-hidden">
+                    <div className="px-2 py-1 bg-orange-50/60 border-b border-orange-100">
+                      <p className="text-[10px] font-semibold text-slate-800 truncate">{g.label}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+                    <div className="px-2 py-1 space-y-1">
+                      {g.requests.map((req) => {
+                        const pct = requestProgressPct('repair', req.status, req.repair_route)
+                        return (
+                          <div key={req.id}>
+                            <div className="flex items-center justify-between gap-1">
+                              <Badge
+                                className={`text-[9px] font-medium border-0 h-4 px-1 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}
+                              >
+                                {req.status}
+                              </Badge>
+                              <span className="text-[9px] text-slate-400 tabular-nums">{pct}%</span>
+                            </div>
+                            <div className="h-0.5 bg-slate-200 rounded-full overflow-hidden mt-0.5">
+                              <div className="h-full bg-orange-500 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardPanel>
 
-          {/* 購入依頼 */}
-          <div className="flex-none max-h-[min(28vh,13rem)] flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
-            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-green-50/60 border-b border-green-100">
-              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <ShoppingCart className="h-4 w-4 text-green-600 shrink-0" />
-                購入依頼 — 依頼機器別
-              </span>
+          <DashboardPanel
+            className="flex-1 min-h-0 bg-white"
+            title="購入依頼"
+            icon={ShoppingCart}
+            iconClass="text-green-600"
+            borderClass="border-l-green-500"
+            headerBg="bg-green-50/60 border-green-100"
+            headerExtra={
               <Link
                 href="/requests/purchase"
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-6 text-[10px] px-2 gap-0.5')}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-5 text-[9px] px-1.5')}
               >
-                一覧へ <ChevronRight className="h-3 w-3" />
+                一覧
               </Link>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 py-2">
-              {purchaseList.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-6">進行中の購入依頼はありません</p>
-              ) : (
-                <div className="space-y-2">
-                  {purchaseGroups.map((g) => (
-                    <div key={g.key} className="rounded-lg border border-slate-100 overflow-hidden">
-                      <div className="px-3 py-2 bg-green-50/60 border-b border-green-100">
-                        <p className="text-xs font-semibold text-slate-800 leading-snug">{g.label}</p>
-                        <p className="text-[10px] text-slate-500">進行中 {g.requests.length} 件</p>
-                      </div>
-                      <div className="px-3 py-2 space-y-2">
-                        {g.requests.map((req) => {
-                          const pct = requestProgressPct('purchase', req.status)
-                          return (
-                            <div key={req.id} className="space-y-1.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <Badge className={`text-[10px] font-medium border-0 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}>
-                                  {req.status}
-                                </Badge>
-                                <span className="text-[10px] text-slate-400 tabular-nums">{pct}%</span>
-                              </div>
-                              <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
-                                <div className="h-full bg-green-600 rounded-full" style={{ width: `${pct}%` }} />
-                              </div>
-                              <p className="text-[10px] text-slate-600 line-clamp-1">{req.description}</p>
-                            </div>
-                          )
-                        })}
-                      </div>
+            }
+          >
+            {purchaseList.length === 0 ? (
+              <p className="text-[11px] text-slate-400 text-center py-3">進行中なし</p>
+            ) : (
+              <div className="space-y-1.5">
+                {purchaseGroups.map((g) => (
+                  <div key={g.key} className="rounded border border-slate-100 overflow-hidden">
+                    <div className="px-2 py-1 bg-green-50/60 border-b border-green-100">
+                      <p className="text-[10px] font-semibold text-slate-800 truncate">{g.label}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
+                    <div className="px-2 py-1 space-y-1">
+                      {g.requests.map((req) => {
+                        const pct = requestProgressPct('purchase', req.status)
+                        return (
+                          <div key={req.id}>
+                            <div className="flex items-center justify-between gap-1">
+                              <Badge
+                                className={`text-[9px] font-medium border-0 h-4 px-1 ${REQUEST_STATUS_COLORS[req.status] ?? 'bg-slate-100 text-slate-700'}`}
+                              >
+                                {req.status}
+                              </Badge>
+                              <span className="text-[9px] text-slate-400 tabular-nums">{pct}%</span>
+                            </div>
+                            <div className="h-0.5 bg-slate-200 rounded-full overflow-hidden mt-0.5">
+                              <div className="h-full bg-green-600 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DashboardPanel>
         </div>
       </div>
     </div>
