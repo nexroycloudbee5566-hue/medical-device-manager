@@ -19,6 +19,10 @@ import { REQUEST_STATUS_COLORS } from '@/components/requests/request-card'
 import { DashboardMessages } from '@/components/dashboard/dashboard-messages'
 import { DailyInspectionTodayList } from '@/components/maintenance/daily-inspection-today-list'
 import {
+  DashboardInspectionDeviceRow,
+  dashboardInspectionListClass,
+} from '@/components/dashboard/dashboard-inspection-device-row'
+import {
   RefreshCw,
   Wrench,
   ShoppingCart,
@@ -107,6 +111,11 @@ function groupRequests(
   }))
   out.sort((a, b) => a.label.localeCompare(b.label, 'ja'))
   return out
+}
+
+function formatYmdShort(ymd: string | null | undefined): string {
+  if (!ymd) return '—'
+  return ymd.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')
 }
 
 export default function DashboardPage() {
@@ -373,151 +382,110 @@ export default function DashboardPage() {
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] gap-3">
 
         {/* ======= 左列: 点検パネル ======= */}
-        <div className="flex flex-col gap-3 min-h-0 min-w-0">
+        <div className="flex flex-col gap-2 min-h-0 min-w-0 overflow-y-auto">
 
-          <DailyInspectionTodayList compact className="shrink-0" listClassName="max-h-36" />
+          <DailyInspectionTodayList dashboard className="shrink-0" />
 
-          {/* 今月の定期点検 */}
-          <div className="flex-[1.35] min-h-[10rem] flex flex-col rounded-xl border-l-4 border-l-blue-500 bg-blue-50/35 border border-blue-100 shadow-sm overflow-hidden">
-            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-blue-50/80 border-b border-blue-100">
-              <span className="flex items-center gap-2 text-sm font-semibold text-blue-950 min-w-0">
-                <CalendarDays className="h-4 w-4 text-blue-700 shrink-0" />
-                <span className="truncate">{currentMonthLabel}の定期点検</span>
-              </span>
-              <span className="flex items-center gap-2 shrink-0">
-                <Badge variant="outline" className="border-blue-300 text-blue-900 bg-white text-[10px]">
-                  {loading ? '…' : `${inspectionDueThisMonth.length} 件`}
-                </Badge>
-                <Link href="/maintenance/annual" className="text-[10px] text-blue-700 underline">
-                  年間計画
-                </Link>
-              </span>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2">
-              {loading ? (
-                <p className="text-sm text-blue-900/70 py-2">読み込み中…</p>
-              ) : inspectionDueThisMonth.length === 0 ? (
-                <div className="text-sm text-blue-900/70 py-2 space-y-1.5">
-                  <p>今月予定の定期点検はありません。</p>
-                  {diag.masterCount === 0 && (
-                    <p className="text-[11px] text-blue-800/80">
-                      ⚠ 定期点検マスタが0件です。
-                      <Link href="/maintenance/master" className="underline ml-1">マスタ画面</Link>
-                      で「定期点検」タブに機器を登録してください。
-                    </p>
-                  )}
-                  {diag.periodicMasterCount > 0 && inspectionStale.length === 0 && (
-                    <p className="text-[11px] text-blue-800/80">
-                      期間超過・未実施も0件です。機器台帳の「メーカー」「型式」とマスタが一致しているか確認してください。
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <ul className="divide-y divide-blue-100 text-sm">
-                  {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => (
-                    <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
-                          {dev.location || [dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
-                        </p>
-                        <p className="text-[10px] text-blue-900 font-medium">
-                          予定: {plannedDate?.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3') ?? '—'}
-                          {lastInspection && (
-                            <span className="text-slate-500 font-normal ml-1">
-                              · 前回: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <Link
+          {/* 定期点検：今月予定と期限超過を横並び */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 shrink-0">
+            <div className="flex flex-col rounded-xl border-l-4 border-l-blue-500 bg-blue-50/35 border border-blue-100 shadow-sm overflow-hidden">
+              <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 bg-blue-50/80 border-b border-blue-100">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-blue-950 min-w-0">
+                  <CalendarDays className="h-4 w-4 text-blue-700 shrink-0" />
+                  <span className="truncate">{currentMonthLabel}の定期点検</span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <Badge variant="outline" className="border-blue-300 text-blue-900 bg-white text-[10px]">
+                    {loading ? '…' : `${inspectionDueThisMonth.length} 件`}
+                  </Badge>
+                  <Link href="/maintenance/annual" className="text-[10px] text-blue-700 underline">
+                    年間計画
+                  </Link>
+                </span>
+              </div>
+              <div className="px-3 py-1.5">
+                {loading ? (
+                  <p className="text-xs text-blue-900/70 py-1">読み込み中…</p>
+                ) : inspectionDueThisMonth.length === 0 ? (
+                  <p className="text-xs text-blue-900/70 py-1">今月予定の定期点検はありません。</p>
+                ) : (
+                  <ul className={dashboardInspectionListClass}>
+                    {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => (
+                      <DashboardInspectionDeviceRow
+                        key={dev.id}
+                        name={dev.name}
+                        barcode={dev.barcode}
                         href={maintenanceInspectionHref(dev)}
-                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
-                      >
-                        点検へ
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                        metaClassName="text-blue-800"
+                        meta={
+                          <>
+                            予定 {formatYmdShort(plannedDate)}
+                            {lastInspection && (
+                              <span className="text-slate-400"> · 前回 {formatYmdShort(lastInspection)}</span>
+                            )}
+                          </>
+                        }
+                      />
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* 期間超過・未実施 */}
-          <div className="flex-[1.35] min-h-[10rem] flex flex-col rounded-xl border-l-4 border-l-amber-500 bg-amber-50/35 border border-amber-100 shadow-sm overflow-hidden">
-            <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-amber-50/80 border-b border-amber-100">
-              <span className="flex items-center gap-2 text-sm font-semibold text-amber-950 min-w-0">
-                <CalendarClock className="h-4 w-4 text-amber-700 shrink-0" />
-                <span className="truncate">期間超過・未実施</span>
-              </span>
-              <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white text-[10px] shrink-0">
-                {loading ? '…' : `${inspectionStale.length} 件`}
-              </Badge>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2">
-              {loading ? (
-                <p className="text-sm text-amber-900/70 py-2">読み込み中…</p>
-              ) : inspectionStale.length === 0 ? (
-                <div className="text-sm text-amber-900/70 py-2 space-y-1.5">
-                  <p>期間超過・未実施の機器はありません。</p>
-                  {diag.masterCount !== -1 && diag.periodicMasterCount === 0 && (
-                    <p className="text-[11px] text-amber-800/80">
-                      ⚠ 定期点検マスタ未登録。
-                      <Link href="/maintenance/master" className="underline ml-1">マスタ画面</Link>
-                      でメーカー・型式マスタを登録してください（点検項目が1件以上必要です）。
-                    </p>
-                  )}
-                  {diag.periodicMasterCount > 0 && diag.activeDeviceCount === 0 && (
-                    <p className="text-[11px] text-amber-800/80">
-                      ⚠ 稼働中（利用中）の機器がありません。機器台帳のステータスを確認してください。
-                    </p>
-                  )}
-                  {diag.periodicMasterCount > 0 && diag.activeDeviceCount > 0 && (
-                    <p className="text-[11px] text-amber-800/80">
-                      機器台帳の「メーカー」「型式」と定期点検マスタの値が一致しているか確認してください。
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <ul className="divide-y divide-amber-100 text-sm">
-                  {inspectionStale.map(({ device: dev, lastInspection, intervalMonths, plannedDate: dueDate }) => (
-                    <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
-                          {[dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
-                        </p>
-                        <p className="text-[10px] text-amber-900 font-medium">
-                          {intervalMonthsLabel(intervalMonths)}サイクル
-                          {lastInspection === null ? (
-                            dueDate
-                              ? <> · 次回予定: {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}（未点検）</>
-                              : <> · 点検記録なし</>
+            <div className="flex flex-col rounded-xl border-l-4 border-l-amber-500 bg-amber-50/35 border border-amber-100 shadow-sm overflow-hidden">
+              <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 bg-amber-50/80 border-b border-amber-100">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-amber-950 min-w-0">
+                  <CalendarClock className="h-4 w-4 text-amber-700 shrink-0" />
+                  <span className="truncate">期限超過・未実施</span>
+                </span>
+                <Badge variant="outline" className="border-amber-300 text-amber-900 bg-white text-[10px] shrink-0">
+                  {loading ? '…' : `${inspectionStale.length} 件`}
+                </Badge>
+              </div>
+              <div className="px-3 py-1.5">
+                {loading ? (
+                  <p className="text-xs text-amber-900/70 py-1">読み込み中…</p>
+                ) : inspectionStale.length === 0 ? (
+                  <p className="text-xs text-amber-900/70 py-1">期限超過・未実施の機器はありません。</p>
+                ) : (
+                  <ul className={dashboardInspectionListClass}>
+                    {inspectionStale.map(({ device: dev, lastInspection, plannedDate: dueDate, intervalMonths }) => (
+                      <DashboardInspectionDeviceRow
+                        key={dev.id}
+                        name={dev.name}
+                        barcode={dev.barcode}
+                        href={maintenanceInspectionHref(dev)}
+                        metaClassName="text-amber-900"
+                        meta={
+                          lastInspection === null ? (
+                            dueDate ? (
+                              <>未点検 · 予定 {formatYmdShort(dueDate)}</>
+                            ) : (
+                              <>点検記録なし</>
+                            )
                           ) : (
                             <>
-                              {' '}· 最終: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                              {intervalMonthsLabel(intervalMonths)}
                               {dueDate && (
-                                <> · 期限: {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                                {formatMonthsPastDueLabel(dueDate) && (
-                                  <>（{formatMonthsPastDueLabel(dueDate)}）</>
-                                )}</>
+                                <>
+                                  {' '}
+                                  · 期限 {formatYmdShort(dueDate)}
+                                  {formatMonthsPastDueLabel(dueDate) && (
+                                    <span className="text-amber-700">
+                                      {' '}
+                                      ({formatMonthsPastDueLabel(dueDate)})
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </>
-                          )}
-                        </p>
-                      </div>
-                      <Link
-                        href={maintenanceInspectionHref(dev)}
-                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
-                      >
-                        点検へ
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                          )
+                        }
+                      />
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
         </div>

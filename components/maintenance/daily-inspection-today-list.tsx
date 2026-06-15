@@ -21,14 +21,19 @@ import {
 type Props = {
   /** ダッシュボード用のコンパクト表示 */
   compact?: boolean
-  /** 親グリッドの高さに合わせて内部スクロール */
-  fill?: boolean
+  /** ダッシュボード：1行表示・2列グリッド・高さ制限なし */
+  dashboard?: boolean
   className?: string
-  /** compact 時のリスト最大高さ（Tailwind クラス）。fill 時は無視 */
+  /** compact 時のリスト最大高さ（Tailwind クラス）。dashboard 時は無視 */
   listClassName?: string
 }
 
-export function DailyInspectionTodayList({ compact = false, fill = false, className, listClassName }: Props) {
+export function DailyInspectionTodayList({
+  compact = false,
+  dashboard = false,
+  className,
+  listClassName,
+}: Props) {
   const supabase = useMemo(() => createClient(), [])
   const [entries, setEntries] = useState<DailyInspectionEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,37 +108,37 @@ export function DailyInspectionTodayList({ compact = false, fill = false, classN
     }
   }, [fetchList, supabase])
 
-  const listClass = fill
-    ? 'flex-1 min-h-0 overflow-y-auto px-3 py-1'
+  const listClass = dashboard
+    ? 'overflow-visible px-3 py-1.5'
     : cn('px-4 py-2 overflow-y-auto', listClassName ?? (compact ? 'max-h-48' : 'max-h-[min(60vh,32rem)]'))
 
-  const headerPad = fill || compact ? 'px-3 py-2' : 'px-4 py-2.5'
-  const titleClass = fill || compact ? 'text-xs' : 'text-sm'
+  const headerPad = dashboard ? 'px-3 py-2' : 'px-4 py-2.5'
 
   return (
-    <div
-      className={cn(
-        'rounded-xl border-l-4 border-l-teal-500 bg-teal-50/35 border border-teal-100 shadow-sm overflow-hidden',
-        fill && 'h-full min-h-0 flex flex-col',
-        className,
-      )}
-    >
+    <div className={cn('rounded-xl border-l-4 border-l-teal-500 bg-teal-50/35 border border-teal-100 shadow-sm overflow-hidden', className)}>
       <div className={cn('w-full flex items-center justify-between gap-2 bg-teal-50/80 shrink-0', headerPad)}>
-        <span className={cn('flex items-center gap-2 font-semibold text-teal-950 min-w-0', titleClass)}>
+        <span className="flex items-center gap-2 text-sm font-semibold text-teal-950 min-w-0">
           <span className="truncate">
-            {fill || compact ? `日常点検（${format(new Date(), 'M/d', { locale: ja })}）` : `本日の日常点検（${todayLabel}）`}
+            {dashboard
+              ? `本日の日常点検（${format(new Date(), 'M/d（E）', { locale: ja })}）`
+              : `本日の日常点検（${todayLabel}）`}
           </span>
         </span>
         <div className="flex items-center gap-2 shrink-0">
           <Badge variant="outline" className="border-teal-300 text-teal-900 bg-white text-[10px]">
             {loading ? '…' : `未実施 ${pendingCount} / ${entries.length}`}
           </Badge>
-          {compact && (
+          {dashboard && (
             <Link href="/maintenance/daily" className="text-[10px] text-teal-800 underline">
               一覧へ
             </Link>
           )}
-          {!compact && (
+          {compact && !dashboard && (
+            <Link href="/maintenance/daily" className="text-[10px] text-teal-800 underline">
+              一覧へ
+            </Link>
+          )}
+          {!compact && !dashboard && (
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void fetchList()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" />
               更新
@@ -175,57 +180,89 @@ export function DailyInspectionTodayList({ compact = false, fill = false, classN
             </ul>
           </div>
         ) : (
-          <ul className="divide-y divide-teal-100 text-sm">
-            {entries.map(({ device: dev, items, completedToday }) => (
-              <li
-                key={dev.id}
-                className={cn(
-                  'first:pt-1 flex items-center justify-between gap-2',
-                  fill ? 'py-1' : compact ? 'py-2' : 'py-3',
-                )}
-              >
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span
-                      className={cn(
-                        'font-medium text-slate-900 truncate',
-                        fill || compact ? 'text-[11px]' : 'text-sm',
-                      )}
-                    >
-                      {dev.name}
-                    </span>
-                    {dev.barcode && !fill && (
-                      <span className="text-[10px] font-mono text-slate-500">{dev.barcode}</span>
+          <ul
+            className={cn(
+              dashboard
+                ? 'grid grid-cols-1 md:grid-cols-2 gap-x-4 auto-rows-min content-start'
+                : 'divide-y divide-teal-100 text-sm',
+            )}
+          >
+            {entries.map(({ device: dev, items, completedToday }) =>
+              dashboard ? (
+                <li
+                  key={dev.id}
+                  className="py-1 flex items-center justify-between gap-2 min-w-0 border-b border-teal-100/80"
+                >
+                  <div className="min-w-0 flex-1 flex items-center gap-1.5 overflow-hidden">
+                    <span className="text-xs font-medium text-slate-900 truncate">{dev.name}</span>
+                    {dev.barcode && (
+                      <span className="text-[10px] font-mono text-slate-400 shrink-0">{dev.barcode}</span>
                     )}
                     <Badge
                       className={cn(
-                        'text-[9px] border-0 px-1 py-0',
+                        'text-[9px] border-0 px-1 py-0 shrink-0',
                         completedToday
                           ? 'bg-emerald-100 text-emerald-800'
                           : 'bg-amber-100 text-amber-900',
                       )}
                     >
-                      {completedToday ? '完了' : '未実施'}
+                      {completedToday ? '済' : '未'}
                     </Badge>
                   </div>
-                  {!fill && (
+                  <Link
+                    href={dailyInspectionHref(dev)}
+                    className={cn(
+                      buttonVariants({ variant: 'outline', size: 'sm' }),
+                      'shrink-0 h-6 text-[10px] px-2 border-teal-200 text-teal-900',
+                    )}
+                  >
+                    {completedToday ? '再記録' : '点検へ'}
+                  </Link>
+                </li>
+              ) : (
+                <li
+                  key={dev.id}
+                  className={cn(
+                    'flex items-center justify-between gap-2',
+                    compact ? 'py-2 first:pt-1' : 'py-3 first:pt-1',
+                  )}
+                >
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={cn('font-medium text-slate-900 truncate', compact ? 'text-xs' : 'text-sm')}>
+                        {dev.name}
+                      </span>
+                      {dev.barcode && (
+                        <span className="text-[10px] font-mono text-slate-500">{dev.barcode}</span>
+                      )}
+                      <Badge
+                        className={cn(
+                          'text-[9px] border-0 px-1 py-0',
+                          completedToday
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-900',
+                        )}
+                      >
+                        {completedToday ? '完了' : '未実施'}
+                      </Badge>
+                    </div>
                     <p className={cn('text-slate-500 truncate', compact ? 'text-[10px]' : 'text-xs')}>
                       {[dev.location, items.map((i) => i.label).join('・')].filter(Boolean).join(' / ')}
                     </p>
-                  )}
-                </div>
-                <Link
-                  href={dailyInspectionHref(dev)}
-                  className={cn(
-                    buttonVariants({ variant: 'outline', size: 'sm' }),
-                    'shrink-0 border-teal-200 text-teal-900',
-                    fill ? 'h-5 text-[9px] px-1.5' : compact ? 'h-6 text-[10px] px-2' : 'h-8 text-xs px-3',
-                  )}
-                >
-                  {completedToday ? '再記録' : '点検'}
-                </Link>
-              </li>
-            ))}
+                  </div>
+                  <Link
+                    href={dailyInspectionHref(dev)}
+                    className={cn(
+                      buttonVariants({ variant: 'outline', size: 'sm' }),
+                      'shrink-0 border-teal-200 text-teal-900',
+                      compact ? 'h-6 text-[10px] px-2' : 'h-8 text-xs px-3',
+                    )}
+                  >
+                    {completedToday ? '再記録' : '点検へ'}
+                  </Link>
+                </li>
+              ),
+            )}
           </ul>
         )}
       </div>
