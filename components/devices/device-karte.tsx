@@ -23,8 +23,8 @@ import {
   describeMaintenanceChecklistLines,
   summarizeMaintenanceChecklistRaw,
 } from '@/lib/maintenance-master'
-import { intervalMonthsLabel } from '@/lib/inspection-interval'
-import { format, isPast, parseISO, startOfDay } from 'date-fns'
+import { intervalMonthsLabel, isMaintenanceDueOverdue } from '@/lib/inspection-interval'
+import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { ClipboardList, X, Wrench, Stethoscope } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -70,9 +70,7 @@ export function DeviceKarte({ device, onClose, className }: Props) {
   )
   const status = normalizeDeviceStatus(device.status)
   const maintenanceDue = device.next_maintenance_due?.slice(0, 10) ?? null
-  const overdue =
-    maintenanceDue != null &&
-    isPast(startOfDay(parseISO(maintenanceDue)))
+  const overdue = isMaintenanceDueOverdue(maintenanceDue)
 
   const maintenanceHref = device.barcode
     ? `/maintenance?barcode=${encodeURIComponent(device.barcode)}`

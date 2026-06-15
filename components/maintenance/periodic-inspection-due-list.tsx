@@ -7,12 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { CalendarClock, CalendarDays, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  differenceInCalendarDays,
-  format,
-  parse,
-  startOfDay,
-} from 'date-fns'
+import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
 import {
@@ -20,7 +15,7 @@ import {
   type PeriodicInspectionEntry,
   type PeriodicInspectionListMeta,
 } from '@/lib/periodic-inspection-lists'
-import { intervalMonthsLabel } from '@/lib/inspection-interval'
+import { formatMonthsPastDueLabel, intervalMonthsLabel } from '@/lib/inspection-interval'
 
 type Props = {
   className?: string
@@ -86,10 +81,7 @@ function DueThisMonthPanel({
           </div>
         ) : (
           <ul className="divide-y divide-blue-100 text-sm">
-            {entries.map(({ device: dev, lastInspection, plannedDate }) => {
-              const planned = plannedDate ? parse(plannedDate, 'yyyy-MM-dd', new Date()) : null
-              const isPast = planned && startOfDay(planned) < startOfDay(new Date())
-              return (
+            {entries.map(({ device: dev, lastInspection, plannedDate }) => (
                 <li key={dev.id} className="py-2.5 first:pt-1 flex items-start justify-between gap-2">
                   <div className="min-w-0 space-y-0.5">
                     <p className="font-medium text-slate-900 truncate text-sm">{dev.name}</p>
@@ -99,7 +91,6 @@ function DueThisMonthPanel({
                     </p>
                     <p className="text-xs text-blue-900 font-medium">
                       予定: {formatYmd(plannedDate)}
-                      {isPast && <span className="text-amber-700 ml-1">（過ぎています）</span>}
                       {lastInspection && (
                         <span className="text-slate-500 font-normal ml-1">
                           · 前回: {formatYmd(lastInspection)}
@@ -117,8 +108,7 @@ function DueThisMonthPanel({
                     点検へ
                   </Link>
                 </li>
-              )
-            })}
+              ))}
           </ul>
         )}
       </div>
@@ -198,12 +188,9 @@ function StalePanel({
                           <>
                             {' '}
                             · 期限: {formatYmd(dueDate)}
-                            （
-                            {differenceInCalendarDays(
-                              startOfDay(new Date()),
-                              startOfDay(parse(dueDate, 'yyyy-MM-dd', new Date())),
+                            {formatMonthsPastDueLabel(dueDate) && (
+                              <>（{formatMonthsPastDueLabel(dueDate)}）</>
                             )}
-                            日超過）
                           </>
                         )}
                       </>

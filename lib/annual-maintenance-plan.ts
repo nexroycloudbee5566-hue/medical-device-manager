@@ -12,7 +12,7 @@ export function deviceEligibleForAnnualPlan(
   const periodic = filterPeriodicMasters(masters)
   return matchMasterForDevice(periodic, dev.manufacturer, dev.model, 'periodic') != null
 }
-import { derivePlannedDate, getIntervalMonthsForDevice } from '@/lib/inspection-interval'
+import { derivePlannedDate, getIntervalMonthsForDevice, compareYearMonth } from '@/lib/inspection-interval'
 
 export type AnnualPlanStatus =
   | 'completed'
@@ -59,14 +59,10 @@ function statusForItem(
   if (completedInYear) return 'completed'
   const planned = parseYmd(plannedDate)
   if (!planned) return 'unscheduled'
-  if (planned < today) return 'overdue'
   const now = startOfDay(today)
-  if (
-    planned.getFullYear() === now.getFullYear() &&
-    planned.getMonth() === now.getMonth()
-  ) {
-    return 'due_this_month'
-  }
+  const monthCmp = compareYearMonth(planned, now)
+  if (monthCmp < 0) return 'overdue'
+  if (monthCmp === 0) return 'due_this_month'
   return 'scheduled'
 }
 

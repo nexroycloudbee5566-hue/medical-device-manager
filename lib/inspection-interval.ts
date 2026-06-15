@@ -84,6 +84,44 @@ function parseYmdLocal(s: string | null | undefined): Date | null {
   return isValid(d) ? startOfDay(d) : null
 }
 
+/** 年月のみ比較（a の年月 − b の年月。例: 2025/3 vs 2025/1 → 2） */
+export function compareYearMonth(a: Date, b: Date): number {
+  return a.getFullYear() * 12 + a.getMonth() - (b.getFullYear() * 12 + b.getMonth())
+}
+
+/** 点検予定月を過ぎているか（予定と同じ月は未超過） */
+export function isDueMonthPast(due: Date, ref: Date): boolean {
+  return compareYearMonth(ref, due) > 0
+}
+
+/** 予定月から何ヶ月超過しているか（予定月・未来は 0） */
+export function monthsPastDue(due: Date, ref: Date): number {
+  const diff = compareYearMonth(ref, due)
+  return diff > 0 ? diff : 0
+}
+
+/** 次回点検予定日が月単位で期限超過か */
+export function isMaintenanceDueOverdue(
+  nextMaintenanceDue: string | null | undefined,
+  today = new Date(),
+): boolean {
+  const due = parseYmdLocal(nextMaintenanceDue)
+  if (!due) return false
+  return isDueMonthPast(due, startOfDay(today))
+}
+
+/** 超過月数の表示用（超過なしは null） */
+export function formatMonthsPastDueLabel(
+  dueYmd: string | null | undefined,
+  today = new Date(),
+): string | null {
+  const due = parseYmdLocal(dueYmd)
+  if (!due) return null
+  const months = monthsPastDue(due, startOfDay(today))
+  if (months <= 0) return null
+  return `${months}ヶ月超過`
+}
+
 /** 予定日が指定日と同じ年月か */
 export function isPlannedInMonth(plannedDate: string | null | undefined, ref: Date): boolean {
   const d = parseYmdLocal(plannedDate)
@@ -101,7 +139,7 @@ export function completedInspectionInMonth(
   return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth()
 }
 
-/** 点検期限を過ぎている、または計画未設定 */
+/** 点検期限月を過ぎている、または計画未設定（日ではなく月単位） */
 export function isInspectionStale(
   lastCompletedDate: string | null | undefined,
   intervalMonths: number,
@@ -112,12 +150,12 @@ export function isInspectionStale(
   const fromDue = parseYmd(nextMaintenanceDue ?? null)
 
   if (!lastCompletedDate) {
-    if (fromDue && fromDue > todayStart) return false
+    if (fromDue && !isDueMonthPast(fromDue, todayStart)) return false
     return true
   }
 
   const due =
     fromDue ?? parseYmd(inspectionDueDate(lastCompletedDate, intervalMonths))
   if (!due) return true
-  return todayStart >= due
+  return isDueMonthPast(due, todayStart)
 }

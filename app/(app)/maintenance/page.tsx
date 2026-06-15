@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/table'
 import { Barcode, Loader2, ClipboardList, Stethoscope, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { format, isPast } from 'date-fns'
+import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import {
   matchMasterForDevice,
@@ -43,6 +43,7 @@ import {
 import {
   nextDueFromCompletedDate,
   intervalMonthsLabel,
+  isMaintenanceDueOverdue,
 } from '@/lib/inspection-interval'
 import { MaintenanceChecklistRowInput } from '@/components/maintenance-checklist-row-input'
 import { DeviceRepairHistory } from '@/components/devices/device-repair-history'
@@ -319,9 +320,7 @@ function MaintenancePageContent() {
     }
   }
 
-  const maintenanceDue = device?.next_maintenance_due ? new Date(device.next_maintenance_due) : null
-  const overdue =
-    maintenanceDue != null && !Number.isNaN(maintenanceDue.getTime()) && isPast(maintenanceDue)
+  const overdue = isMaintenanceDueOverdue(device?.next_maintenance_due)
 
   const templateItems = masterForDevice?.checklist_items ?? []
   const hasBulkTargets = templateItems.some((i) => i.kind === 'checkbox' || i.kind === 'yn')
@@ -457,7 +456,7 @@ function MaintenancePageContent() {
                 <div className="border-b border-slate-100 pb-3 space-y-2">
                   <div className="flex justify-between gap-4 items-center">
                     <dt className="text-slate-500 shrink-0">次回点検予定</dt>
-                    {maintenanceDue && (
+                    {device.next_maintenance_due && (
                       <dd className="text-right text-xs">
                         <span className={overdue ? 'text-red-600 font-semibold' : 'text-slate-600'}>
                           {overdue ? '期限切れ' : '予定あり'}

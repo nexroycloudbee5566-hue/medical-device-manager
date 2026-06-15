@@ -28,7 +28,7 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { differenceInCalendarDays, format, parse, startOfDay } from 'date-fns'
+import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import {
   deviceHasInspectionMaster,
@@ -37,7 +37,7 @@ import {
 } from '@/lib/maintenance-master'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
 import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
-import { intervalMonthsLabel } from '@/lib/inspection-interval'
+import { intervalMonthsLabel, formatMonthsPastDueLabel } from '@/lib/inspection-interval'
 import { mapPeriodicInspectionRows } from '@/lib/periodic-inspection-lists'
 
 type InspectionDeviceRow = Pick<
@@ -414,36 +414,31 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <ul className="divide-y divide-blue-100 text-sm">
-                  {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => {
-                    const planned = plannedDate ? parse(plannedDate, 'yyyy-MM-dd', new Date()) : null
-                    const isPast = planned && startOfDay(planned) < startOfDay(new Date())
-                    return (
-                      <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
-                          <p className="text-[10px] text-slate-500">
-                            {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
-                            {dev.location || [dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
-                          </p>
-                          <p className="text-[10px] text-blue-900 font-medium">
-                            予定: {plannedDate?.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3') ?? '—'}
-                            {isPast && <span className="text-amber-700 ml-1">（過ぎています）</span>}
-                            {lastInspection && (
-                              <span className="text-slate-500 font-normal ml-1">
-                                · 前回: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                        <Link
-                          href={maintenanceInspectionHref(dev)}
-                          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
-                        >
-                          点検へ
-                        </Link>
-                      </li>
-                    )
-                  })}
+                  {inspectionDueThisMonth.map(({ device: dev, lastInspection, plannedDate }) => (
+                    <li key={dev.id} className="py-2 first:pt-1 flex items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="font-medium text-slate-900 truncate text-xs">{dev.name}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {dev.barcode && <span className="font-mono mr-1">{dev.barcode}</span>}
+                          {dev.location || [dev.manufacturer, dev.model].filter(Boolean).join(' / ')}
+                        </p>
+                        <p className="text-[10px] text-blue-900 font-medium">
+                          予定: {plannedDate?.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3') ?? '—'}
+                          {lastInspection && (
+                            <span className="text-slate-500 font-normal ml-1">
+                              · 前回: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <Link
+                        href={maintenanceInspectionHref(dev)}
+                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0 h-6 text-[10px] px-2')}
+                      >
+                        点検へ
+                      </Link>
+                    </li>
+                  ))}
                 </ul>
               )}
             </div>
@@ -505,7 +500,9 @@ export default function DashboardPage() {
                               {' '}· 最終: {lastInspection.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
                               {dueDate && (
                                 <> · 期限: {dueDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1/$2/$3')}
-                                （{differenceInCalendarDays(startOfDay(new Date()), startOfDay(parse(dueDate, 'yyyy-MM-dd', new Date())))}日超過）</>
+                                {formatMonthsPastDueLabel(dueDate) && (
+                                  <>（{formatMonthsPastDueLabel(dueDate)}）</>
+                                )}</>
                               )}
                             </>
                           )}

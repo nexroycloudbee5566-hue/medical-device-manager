@@ -62,6 +62,7 @@ import {
 } from '@/lib/excel-device-import'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
+import { isMaintenanceDueOverdue, isPlannedInMonth } from '@/lib/inspection-interval'
 import {
   MeLabelPrintDialog,
   type MeLabelPrintTarget,
@@ -770,10 +771,9 @@ export default function DevicesPage() {
                   <TableCell className="text-sm">
                     {device.next_maintenance_due ? (
                       <span className={
-                        new Date(device.next_maintenance_due) < new Date()
+                        isMaintenanceDueOverdue(device.next_maintenance_due)
                           ? 'text-red-600 font-medium'
-                          : new Date(device.next_maintenance_due) <
-                            new Date(Date.now() + 30 * 86400000)
+                          : isPlannedInMonth(device.next_maintenance_due, new Date())
                             ? 'text-orange-600 font-medium'
                             : 'text-slate-600'
                       }>
