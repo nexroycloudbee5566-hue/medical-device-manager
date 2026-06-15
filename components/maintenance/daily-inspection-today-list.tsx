@@ -191,29 +191,34 @@ export function DailyInspectionTodayList({
               dashboard ? (
                 <li
                   key={dev.id}
-                  className="py-1 flex items-center justify-between gap-2 min-w-0 border-b border-teal-100/80"
+                  className="py-1 flex items-start justify-between gap-2 min-w-0 border-b border-teal-100/80"
                 >
-                  <div className="min-w-0 flex-1 flex items-center gap-1.5 overflow-hidden">
-                    <span className="text-xs font-medium text-slate-900 truncate">{dev.name}</span>
-                    {dev.barcode && (
-                      <span className="text-[10px] font-mono text-slate-400 shrink-0">{dev.barcode}</span>
-                    )}
-                    <Badge
-                      className={cn(
-                        'text-[9px] border-0 px-1 py-0 shrink-0',
-                        completedToday
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-900',
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center gap-1.5 overflow-hidden">
+                      <span className="text-xs font-medium text-slate-900 truncate">{dev.name}</span>
+                      {dev.barcode && (
+                        <span className="text-[10px] font-mono text-slate-400 shrink-0">{dev.barcode}</span>
                       )}
-                    >
-                      {completedToday ? '済' : '未'}
-                    </Badge>
+                      <Badge
+                        className={cn(
+                          'text-[9px] border-0 px-1 py-0 shrink-0',
+                          completedToday
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-900',
+                        )}
+                      >
+                        {completedToday ? '済' : '未'}
+                      </Badge>
+                    </div>
+                    {dev.location?.trim() && (
+                      <p className="text-[10px] text-slate-500 truncate">{dev.location.trim()}</p>
+                    )}
                   </div>
                   <Link
                     href={dailyInspectionHref(dev)}
                     className={cn(
                       buttonVariants({ variant: 'outline', size: 'sm' }),
-                      'shrink-0 h-6 text-[10px] px-2 border-teal-200 text-teal-900',
+                      'shrink-0 h-6 text-[10px] px-2 border-teal-200 text-teal-900 mt-0.5',
                     )}
                   >
                     {completedToday ? '再記録' : '点検へ'}

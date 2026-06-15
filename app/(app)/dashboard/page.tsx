@@ -415,6 +415,7 @@ export default function DashboardPage() {
                         key={dev.id}
                         name={dev.name}
                         barcode={dev.barcode}
+                        location={dev.location}
                         href={maintenanceInspectionHref(dev)}
                         metaClassName="text-blue-800"
                         meta={
@@ -454,6 +455,7 @@ export default function DashboardPage() {
                         key={dev.id}
                         name={dev.name}
                         barcode={dev.barcode}
+                        location={dev.location}
                         href={maintenanceInspectionHref(dev)}
                         metaClassName="text-amber-900"
                         meta={
