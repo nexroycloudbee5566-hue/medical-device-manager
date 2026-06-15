@@ -22,9 +22,11 @@ type Props = {
   /** ダッシュボード用のコンパクト表示 */
   compact?: boolean
   className?: string
+  /** compact 時のリスト最大高さ（Tailwind クラス） */
+  listClassName?: string
 }
 
-export function DailyInspectionTodayList({ compact = false, className }: Props) {
+export function DailyInspectionTodayList({ compact = false, className, listClassName }: Props) {
   const supabase = useMemo(() => createClient(), [])
   const [entries, setEntries] = useState<DailyInspectionEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -99,7 +101,7 @@ export function DailyInspectionTodayList({ compact = false, className }: Props) 
     }
   }, [fetchList, supabase])
 
-  const listClass = compact ? 'max-h-48' : 'max-h-[min(60vh,32rem)]'
+  const listClass = listClassName ?? (compact ? 'max-h-48' : 'max-h-[min(60vh,32rem)]')
 
   return (
     <div className={cn('rounded-xl border-l-4 border-l-teal-500 bg-teal-50/35 border border-teal-100 shadow-sm overflow-hidden', className)}>

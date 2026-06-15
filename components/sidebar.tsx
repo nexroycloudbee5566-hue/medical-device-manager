@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { Profile } from '@/lib/types'
 import { isSyntheticPinEmail } from '@/lib/pin-auth'
@@ -26,12 +25,29 @@ import {
   ClipboardCheck,
 } from 'lucide-react'
 
+import {
+  SidebarInspectionBadge,
+  useSidebarInspectionCounts,
+} from '@/components/sidebar-inspection-badges'
+
 const navItems = [
   { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard, match: (p: string) => p === '/dashboard' },
   { href: '/manual', label: '使い方マニュアル', icon: BookOpen, match: (p: string) => p.startsWith('/manual') },
   { href: '/devices', label: '機器台帳', icon: Cpu, match: (p: string) => p.startsWith('/devices') },
-  { href: '/maintenance/daily', label: '日常点検', icon: ClipboardCheck, match: (p: string) => p.startsWith('/maintenance/daily') },
-  { href: '/maintenance', label: '定期点検', icon: Wrench, match: (p: string) => p === '/maintenance' },
+  {
+    href: '/maintenance/daily',
+    label: '日常点検',
+    icon: ClipboardCheck,
+    match: (p: string) => p.startsWith('/maintenance/daily'),
+    pending: 'daily' as const,
+  },
+  {
+    href: '/maintenance',
+    label: '定期点検',
+    icon: Wrench,
+    match: (p: string) => p === '/maintenance',
+    pending: 'periodic' as const,
+  },
   { href: '/maintenance/annual', label: '年間メンテ計画', icon: CalendarRange, match: (p: string) => p.startsWith('/maintenance/annual') },
   { href: '/requests/purchase', label: '購入依頼', icon: ShoppingCart, match: (p: string) => p.startsWith('/requests/purchase') },
   { href: '/requests/repair', label: '修理依頼', icon: Hammer, match: (p: string) => p.startsWith('/requests/repair') },
@@ -47,7 +63,7 @@ interface SidebarProps {
 export function Sidebar({ profile, userEmail }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const supabase = createClient()
+  const inspectionCounts = useSidebarInspectionCounts()
 
   async function handleSignOut() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -79,21 +95,38 @@ export function Sidebar({ profile, userEmail }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map(({ href, label, icon: Icon, match }) => (
+        {navItems.map(({ href, label, icon: Icon, match, pending }) => {
+          const active = match(pathname)
+          return (
           <Link
             key={href}
             href={href}
             className={cn(
               'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-              match(pathname)
+              active
                 ? 'bg-blue-50 text-blue-700'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            {label}
+            <span className="truncate">{label}</span>
+            {pending === 'daily' && (
+              <SidebarInspectionBadge
+                kind="daily"
+                active={active}
+                count={inspectionCounts.dailyPending}
+              />
+            )}
+            {pending === 'periodic' && (
+              <SidebarInspectionBadge
+                kind="periodic"
+                active={active}
+                count={inspectionCounts.periodicPending}
+              />
+            )}
           </Link>
-        ))}
+          )
+        })}
 
         {profile?.role === 'admin' && (
           <>

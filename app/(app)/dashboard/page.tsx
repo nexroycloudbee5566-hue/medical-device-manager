@@ -370,15 +370,15 @@ export default function DashboardPage() {
       )}
 
       {/* ── メイングリッド ── */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] gap-3">
 
         {/* ======= 左列: 点検パネル ======= */}
-        <div className="flex flex-col gap-3 min-h-0">
+        <div className="flex flex-col gap-3 min-h-0 min-w-0">
 
-          <DailyInspectionTodayList compact className="shrink-0" />
+          <DailyInspectionTodayList compact className="shrink-0" listClassName="max-h-36" />
 
-          {/* 今月の定期点検（flex-1、内部スクロール） */}
-          <div className="flex-1 min-h-0 flex flex-col rounded-xl border-l-4 border-l-blue-500 bg-blue-50/35 border border-blue-100 shadow-sm overflow-hidden">
+          {/* 今月の定期点検 */}
+          <div className="flex-[1.35] min-h-[10rem] flex flex-col rounded-xl border-l-4 border-l-blue-500 bg-blue-50/35 border border-blue-100 shadow-sm overflow-hidden">
             <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-blue-50/80 border-b border-blue-100">
               <span className="flex items-center gap-2 text-sm font-semibold text-blue-950 min-w-0">
                 <CalendarDays className="h-4 w-4 text-blue-700 shrink-0" />
@@ -444,8 +444,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 期間超過・未実施（flex-1、内部スクロール） */}
-          <div className="flex-1 min-h-0 flex flex-col rounded-xl border-l-4 border-l-amber-500 bg-amber-50/35 border border-amber-100 shadow-sm overflow-hidden">
+          {/* 期間超過・未実施 */}
+          <div className="flex-[1.35] min-h-[10rem] flex flex-col rounded-xl border-l-4 border-l-amber-500 bg-amber-50/35 border border-amber-100 shadow-sm overflow-hidden">
             <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-amber-50/80 border-b border-amber-100">
               <span className="flex items-center gap-2 text-sm font-semibold text-amber-950 min-w-0">
                 <CalendarClock className="h-4 w-4 text-amber-700 shrink-0" />
@@ -522,11 +522,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ======= 右列: 依頼パネル ======= */}
-        <div className="flex flex-col gap-3 min-h-0">
+        {/* ======= 右列: 依頼パネル（コンパクト） ======= */}
+        <div className="flex flex-col gap-3 min-h-0 min-w-0 lg:justify-start">
 
           {/* 修理依頼 */}
-          <div className="flex-1 min-h-0 flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex-none max-h-[min(28vh,13rem)] flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
             <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-orange-50/60 border-b border-orange-100">
               <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <Hammer className="h-4 w-4 text-orange-600 shrink-0" />
@@ -581,7 +581,7 @@ export default function DashboardPage() {
           </div>
 
           {/* 購入依頼 */}
-          <div className="flex-1 min-h-0 flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex-none max-h-[min(28vh,13rem)] flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
             <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 bg-green-50/60 border-b border-green-100">
               <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <ShoppingCart className="h-4 w-4 text-green-600 shrink-0" />

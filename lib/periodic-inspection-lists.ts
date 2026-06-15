@@ -96,6 +96,17 @@ export function buildPeriodicInspectionLists(
   return { dueThisMonth: dueMonth, stale }
 }
 
+/** 未点検の定期点検対象数（今月予定＋期限超過、重複は1件） */
+export function countPeriodicPending(
+  dueThisMonth: PeriodicInspectionEntry[],
+  stale: PeriodicInspectionEntry[],
+): number {
+  const ids = new Set<string>()
+  for (const e of stale) ids.add(e.device.id)
+  for (const e of dueThisMonth) ids.add(e.device.id)
+  return ids.size
+}
+
 export type PeriodicInspectionListMeta = {
   periodicMasterCount: number
   activeDeviceCount: number
