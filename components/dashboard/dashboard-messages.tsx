@@ -29,6 +29,14 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+function isEmphasizedColumnError(message: string) {
+  return message.includes('is_emphasized') || message.includes('schema cache')
+}
+
+const EMPHASIS_COLUMN_HINT =
+  'Supabase SQL Editor で fix_dashboard_messages_emphasized.sql を実行し、' +
+  '数十秒待ってからページを再読み込みしてください。'
+
 export function DashboardMessages() {
   const supabase = useMemo(() => createClient(), [])
   const [messages, setMessages] = useState<DashboardMessage[]>([])
@@ -37,6 +45,7 @@ export function DashboardMessages() {
   const [inboxLoading, setInboxLoading] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [tableMissing, setTableMissing] = useState(false)
+  const [emphasisColumnMissing, setEmphasisColumnMissing] = useState(false)
   const [inboxTableMissing, setInboxTableMissing] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -56,6 +65,19 @@ export function DashboardMessages() {
 
   const unreadCount = inbox.filter((m) => !m.is_read).length
 
+  const checkEmphasisColumn = useCallback(async () => {
+    const { error } = await supabase
+      .from('dashboard_messages')
+      .select('is_emphasized')
+      .limit(0)
+    if (error && isEmphasizedColumnError(error.message)) {
+      setEmphasisColumnMissing(true)
+      return false
+    }
+    setEmphasisColumnMissing(false)
+    return true
+  }, [supabase])
+
   const fetchMessages = useCallback(async () => {
     const { data, error } = await supabase
       .from('dashboard_messages')
@@ -74,8 +96,9 @@ export function DashboardMessages() {
     }
     setTableMissing(false)
     setMessages((data as DashboardMessage[]) ?? [])
+    await checkEmphasisColumn()
     setLoading(false)
-  }, [supabase])
+  }, [checkEmphasisColumn, supabase])
 
   const fetchInbox = useCallback(async () => {
     if (!isAdmin) return
@@ -169,39 +192,54 @@ export function DashboardMessages() {
       alert('メッセージ本文を入力してください。')
       return
     }
+    if (emphasized && emphasisColumnMissing) {
+      alert(`強調機能を使うには DB 更新が必要です。\n\n${EMPHASIS_COLUMN_HINT}`)
+      return
+    }
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       const now = new Date().toISOString()
-      const payload = {
+      const basePayload = {
         title: title.trim() || null,
         body: text,
         author_name: authorName || '管理者',
-        is_emphasized: emphasized,
         updated_at: now,
       }
+      const withEmphasis = !emphasisColumnMissing
+        ? { ...basePayload, is_emphasized: emphasized }
+        : basePayload
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('dashboard_messages')
-          .update(payload)
-          .eq('id', editingId)
-        if (error) {
-          alert(`更新に失敗しました: ${error.message}`)
-          return
+      async function persist(payload: typeof withEmphasis | typeof basePayload) {
+        if (editingId) {
+          return supabase.from('dashboard_messages').update(payload).eq('id', editingId)
         }
-      } else {
-        const { error } = await supabase.from('dashboard_messages').insert({
+        return supabase.from('dashboard_messages').insert({
           ...payload,
           created_by: user?.id ?? null,
         })
-        if (error) {
-          alert(
-            `投稿に失敗しました: ${error.message}\n\n` +
-              'Supabase で migration_dashboard_messages.sql を実行してください。',
-          )
+      }
+
+      let { error } = await persist(withEmphasis)
+
+      if (error && isEmphasizedColumnError(error.message)) {
+        setEmphasisColumnMissing(true)
+        if (emphasized) {
+          alert(`更新に失敗しました: ${error.message}\n\n${EMPHASIS_COLUMN_HINT}`)
           return
         }
+        ;({ error } = await persist(basePayload))
+      }
+
+      if (error) {
+        const action = editingId ? '更新' : '投稿'
+        alert(
+          `${action}に失敗しました: ${error.message}\n\n` +
+            (isEmphasizedColumnError(error.message)
+              ? EMPHASIS_COLUMN_HINT
+              : 'Supabase で migration_dashboard_messages.sql を実行してください。'),
+        )
+        return
       }
       resetComposer()
       await fetchMessages()
@@ -336,6 +374,17 @@ export function DashboardMessages() {
           </div>
         </div>
 
+        {emphasisColumnMissing && isAdmin && (
+          <div className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="font-medium">強調機能の DB 列（is_emphasized）が未設定です。</p>
+            <p className="mt-1 text-amber-800">
+              Supabase SQL Editor で{' '}
+              <code className="bg-amber-100 px-1 rounded">fix_dashboard_messages_emphasized.sql</code>{' '}
+              を実行し、数十秒待ってから再読み込みしてください。通常の投稿はそのまま使えます。
+            </p>
+          </div>
+        )}
+
         <div className="px-4 py-3 space-y-3 max-h-40 overflow-y-auto">
           {loading ? (
             <p className="text-sm text-slate-400 flex items-center gap-2">
@@ -430,20 +479,22 @@ export function DashboardMessages() {
                   {editingId ? 'お知らせを編集' : '新しいお知らせ'}
                 </p>
                 <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      'h-7 text-xs',
-                      emphasized
-                        ? 'border-red-400 bg-red-100 text-red-900 hover:bg-red-200'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-100',
-                    )}
-                    onClick={() => setEmphasized((v) => !v)}
-                  >
-                    強調
-                  </Button>
+                  {!emphasisColumnMissing && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        'h-7 text-xs',
+                        emphasized
+                          ? 'border-red-400 bg-red-100 text-red-900 hover:bg-red-200'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-100',
+                      )}
+                      onClick={() => setEmphasized((v) => !v)}
+                    >
+                      強調
+                    </Button>
+                  )}
                   <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={resetComposer}>
                     <X className="h-4 w-4" />
                   </Button>
