@@ -1,4 +1,34 @@
 -- ダッシュボードお知らせ（管理者 → 全スタッフ）
+-- profiles テーブルが無い場合は先に作成（管理者判定に必要）
+create table if not exists public.hospitals (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  hospital_id uuid references public.hospitals(id),
+  name text not null default '',
+  role text not null default 'staff' check (role in ('admin', 'staff')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "profiles_select" on public.profiles;
+create policy "profiles_select" on public.profiles
+  for select to authenticated using (true);
+
+drop policy if exists "profiles_insert" on public.profiles;
+create policy "profiles_insert" on public.profiles
+  for insert to authenticated with check (auth.uid() = id);
+
+drop policy if exists "profiles_update" on public.profiles;
+create policy "profiles_update" on public.profiles
+  for update to authenticated using (auth.uid() = id);
+
 create table if not exists public.dashboard_messages (
   id uuid primary key default gen_random_uuid(),
   title text,

@@ -1,6 +1,40 @@
--- ダッシュボードお知らせ（テーブル未作成なら作成、作成済みなら強調列を追加）
--- Supabase SQL Editor でこのファイルだけ実行して OK です
+-- ダッシュボードお知らせ（単体実行用）
+-- テーブル・profiles が無い環境でも動くよう、最低限の前提も作成します。
+--
+-- ※ DB を初めて構築する場合は supabase/schema.sql の実行を推奨します。
+--    このファイルは「お知らせ機能だけ追加したい」場合向けです。
 
+-- ── 前提テーブル（profiles: 管理者判定に使用）──
+create table if not exists public.hospitals (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  hospital_id uuid references public.hospitals(id),
+  name text not null default '',
+  role text not null default 'staff' check (role in ('admin', 'staff')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "profiles_select" on public.profiles;
+create policy "profiles_select" on public.profiles
+  for select to authenticated using (true);
+
+drop policy if exists "profiles_insert" on public.profiles;
+create policy "profiles_insert" on public.profiles
+  for insert to authenticated with check (auth.uid() = id);
+
+drop policy if exists "profiles_update" on public.profiles;
+create policy "profiles_update" on public.profiles
+  for update to authenticated using (auth.uid() = id);
+
+-- ── お知らせテーブル ──
 create table if not exists public.dashboard_messages (
   id uuid primary key default gen_random_uuid(),
   title text,
