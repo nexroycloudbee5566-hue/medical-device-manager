@@ -4,6 +4,7 @@ create table if not exists public.dashboard_messages (
   title text,
   body text not null,
   author_name text not null default '',
+  is_emphasized boolean not null default false,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
