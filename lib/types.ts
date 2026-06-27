@@ -244,6 +244,7 @@ export interface DashboardMessage {
   title: string | null
   body: string
   author_name: string
+  is_emphasized: boolean
   created_by: string | null
   created_at: string
   updated_at: string

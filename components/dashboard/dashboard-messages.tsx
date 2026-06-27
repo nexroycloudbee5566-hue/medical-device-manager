@@ -42,6 +42,7 @@ export function DashboardMessages() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [emphasized, setEmphasized] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [authorName, setAuthorName] = useState('')
@@ -151,12 +152,14 @@ export function DashboardMessages() {
     setEditingId(null)
     setTitle('')
     setBody('')
+    setEmphasized(false)
   }
 
   function startEdit(msg: DashboardMessage) {
     setEditingId(msg.id)
     setTitle(msg.title?.trim() ?? '')
     setBody(msg.body)
+    setEmphasized(!!msg.is_emphasized)
     setComposerOpen(true)
   }
 
@@ -174,6 +177,7 @@ export function DashboardMessages() {
         title: title.trim() || null,
         body: text,
         author_name: authorName || '管理者',
+        is_emphasized: emphasized,
         updated_at: now,
       }
 
@@ -350,16 +354,25 @@ export function DashboardMessages() {
                 key={msg.id}
                 className={cn(
                   'rounded-lg border px-3 py-2.5 text-sm',
-                  editingId === msg.id
-                    ? 'border-violet-300 bg-violet-50/50'
-                    : 'border-slate-100 bg-white',
+                  msg.is_emphasized
+                    ? 'border-red-400 bg-red-50/80'
+                    : editingId === msg.id
+                      ? 'border-violet-300 bg-violet-50/50'
+                      : 'border-slate-100 bg-white',
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    {msg.title?.trim() && (
-                      <p className="font-semibold text-slate-800">{msg.title.trim()}</p>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {msg.title?.trim() && (
+                        <p className="font-semibold text-slate-800">{msg.title.trim()}</p>
+                      )}
+                      {msg.is_emphasized && (
+                        <Badge className="bg-red-500 text-white border-0 text-[10px] h-5 px-1.5">
+                          強調
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
                       {msg.body}
                     </p>
@@ -404,14 +417,37 @@ export function DashboardMessages() {
           )}
 
           {isAdmin && composerOpen && (
-            <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-violet-900">
+            <div
+              className={cn(
+                'rounded-lg border p-3 space-y-3 transition-colors',
+                emphasized
+                  ? 'border-red-400 bg-red-50/60'
+                  : 'border-violet-200 bg-violet-50/40',
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className={cn('text-sm font-medium', emphasized ? 'text-red-900' : 'text-violet-900')}>
                   {editingId ? 'お知らせを編集' : '新しいお知らせ'}
                 </p>
-                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={resetComposer}>
-                  <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      'h-7 text-xs',
+                      emphasized
+                        ? 'border-red-400 bg-red-100 text-red-900 hover:bg-red-200'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-100',
+                    )}
+                    onClick={() => setEmphasized((v) => !v)}
+                  >
+                    強調
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={resetComposer}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="msg-title" className="text-xs">タイトル（任意）</Label>
@@ -420,7 +456,7 @@ export function DashboardMessages() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="例: 点検スケジュールの変更について"
-                  className="h-9 text-sm bg-white"
+                  className={cn('h-9 text-sm bg-white', emphasized && 'border-red-300 focus-visible:ring-red-400/30')}
                 />
               </div>
               <div className="space-y-1.5">
@@ -431,7 +467,7 @@ export function DashboardMessages() {
                   onChange={(e) => setBody(e.target.value)}
                   placeholder="スタッフ全員に伝えたい内容を入力してください"
                   rows={3}
-                  className="text-sm bg-white"
+                  className={cn('text-sm bg-white', emphasized && 'border-red-300 focus-visible:ring-red-400/30')}
                 />
               </div>
               <div className="flex justify-end gap-2">
