@@ -4,18 +4,13 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   Device,
-  ReceptionAssessment,
-  RECEPTION_ASSESSMENT_LABEL,
   REPAIR_ROUTE_LABEL,
   RepairRoute,
   RequestType,
   REQUEST_TYPE_LABEL,
   normalizeDeviceStatus,
 } from '@/lib/types'
-import {
-  deviceStatusForAssessment,
-  insertErrorHint,
-} from '@/lib/repair-request'
+import { insertErrorHint } from '@/lib/repair-request'
 import { logAuditEvent } from '@/lib/audit-log'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,7 +47,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
 
   const [type, setType] = useState<RequestType>(fixedType ?? 'repair')
   const [repairRoute, setRepairRoute] = useState<RepairRoute>('manufacturer')
-  const [receptionAssessment, setReceptionAssessment] = useState<ReceptionAssessment>('repair')
   const [barcodeInput, setBarcodeInput] = useState('')
   const [lookupBusy, setLookupBusy] = useState(false)
   const [selectedRepairDevice, setSelectedRepairDevice] = useState<Device | null>(null)
@@ -154,7 +148,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
           description: desc,
           notes: notes.trim() || null,
           repair_route: effectiveType === 'repair' ? repairRoute : 'manufacturer',
-          reception_assessment: isInHouse ? receptionAssessment : null,
           created_by: user?.id ?? null,
         })
         .select('id')
@@ -166,21 +159,7 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
         return
       }
 
-      if (isInHouse && selectedRepairDevice) {
-        const deviceStatus = deviceStatusForAssessment(receptionAssessment)
-        const { error: deviceError } = await supabase
-          .from('devices')
-          .update({ status: deviceStatus })
-          .eq('id', selectedRepairDevice.id)
-        if (deviceError) {
-          console.error('[依頼登録] 機器ステータス更新エラー:', deviceError)
-          alert(`依頼は登録されましたが、機器ステータスの更新に失敗しました: ${deviceError.message}`)
-        }
-      }
-
-      const logNotes = isInHouse
-        ? `受付判定: ${RECEPTION_ASSESSMENT_LABEL[receptionAssessment]}${notes.trim() ? `／${notes.trim()}` : ''}`
-        : notes.trim() || null
+      const logNotes = notes.trim() || null
 
       const { error: logError } = await supabase.from('request_logs').insert({
         request_id: request.id,
@@ -221,7 +200,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
   function resetForm() {
     setType(fixedType ?? 'repair')
     setRepairRoute('manufacturer')
-    setReceptionAssessment('repair')
     setBarcodeInput('')
     setSelectedRepairDevice(null)
     setRequestedEquipment('')
@@ -282,7 +260,7 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
               <p className="text-xs text-slate-500">
                 {repairRoute === 'manufacturer'
                   ? '業者見積〜修理まで、従来どおりのフローで進めます。'
-                  : '受付で状態を判定し、院内で修理を進めます。'}
+                  : '受付後、院内で修理を進めます。完了時に機器状態を判定します。'}
               </p>
             </div>
           )}
@@ -341,36 +319,6 @@ export function NewRequestDialog({ open, onClose, onCreated, fixedType }: Props)
                   </Button>
                 </div>
               )}
-            </div>
-          )}
-
-          {isInHouseRepair && (
-            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 p-3">
-              <Label className="text-amber-900">受付時の状態判定 *</Label>
-              <p className="text-xs text-amber-800/80 -mt-1">
-                詳細確認後の機器状態を選択してください。「破棄」の場合、機器台帳のステータスも破棄になります。
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {(['normal', 'repair', 'dispose'] as ReceptionAssessment[]).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setReceptionAssessment(value)}
-                    className={cn(
-                      'rounded-lg border px-2 py-2 text-sm font-medium transition-colors',
-                      receptionAssessment === value
-                        ? value === 'dispose'
-                          ? 'border-red-400 bg-red-50 text-red-900'
-                          : value === 'repair'
-                            ? 'border-orange-400 bg-orange-50 text-orange-900'
-                            : 'border-emerald-400 bg-emerald-50 text-emerald-900'
-                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-                    )}
-                  >
-                    {RECEPTION_ASSESSMENT_LABEL[value]}
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 

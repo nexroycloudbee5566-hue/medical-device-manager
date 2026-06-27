@@ -6,10 +6,12 @@ import {
   Request,
   RECEPTION_ASSESSMENT_LABEL,
   REPAIR_ROUTE_LABEL,
+  ReceptionAssessment,
   getStatusList,
   REQUEST_TYPE_LABEL,
 } from '@/lib/types'
 import {
+  advanceRequiresCompletionAssessment,
   advanceRequiresCompletionFields,
   advanceRequiresRepairNotes,
   buildInHouseLogNotes,
@@ -48,6 +50,10 @@ import { ja } from 'date-fns/locale'
 import { Loader2, History, Trash2 } from 'lucide-react'
 import { RequestStatusHistory } from '@/components/requests/request-status-history'
 import { fetchRequestLogs, mergeRegistrationNotes } from '@/lib/request-logs'
+import {
+  COMPLETION_ASSESSMENT_LABEL,
+  CompletionAssessmentSelector,
+} from '@/components/requests/completion-assessment-selector'
 
 interface Props {
   request: Request
@@ -62,6 +68,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
   const [notes, setNotes] = useState('')
   const [repairContent, setRepairContent] = useState('')
   const [replacementParts, setReplacementParts] = useState('')
+  const [completionAssessment, setCompletionAssessment] = useState<ReceptionAssessment>('repair')
   const [estimateAmount, setEstimateAmount] = useState('')
   const [handledByName, setHandledByName] = useState('')
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof fetchRequestLogs>>>([])
@@ -77,6 +84,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
     setNotes('')
     setRepairContent(request.repair_content?.trim() ?? '')
     setReplacementParts(request.replacement_parts?.trim() ?? '')
+    setCompletionAssessment(request.reception_assessment ?? 'repair')
     const stored = coerceEstimateAmount(request.estimate_amount)
     setEstimateAmount(stored !== null ? String(Math.round(stored)) : '')
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -91,7 +99,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
     void fetchRequestLogs(supabase, request.id).then((rows) => {
       setLogs(mergeRegistrationNotes(rows, request.notes))
     })
-  }, [open, request.id, request.status, request.estimate_amount, request.notes, request.repair_content, request.replacement_parts, supabase])
+  }, [open, request.id, request.status, request.estimate_amount, request.notes, request.repair_content, request.replacement_parts, request.reception_assessment, supabase])
 
   const parsedEstimate = parseEstimateInput(estimateAmount)
   const atEstimateStatus = newStatus === '見積受取'
@@ -112,6 +120,13 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
 
   const needsRepairNotes = statusChanged && advanceRequiresRepairNotes(request, newStatus)
   const needsCompletionFields = statusChanged && advanceRequiresCompletionFields(request, newStatus)
+  const needsCompletionAssessment = statusChanged && advanceRequiresCompletionAssessment(request, newStatus)
+  const canEditCompletionAssessment =
+    inHouse && (request.status === '完了' || needsCompletionAssessment)
+
+  const assessmentChanged =
+    canEditCompletionAssessment &&
+    completionAssessment !== (request.reception_assessment ?? 'repair')
 
   const inHouseFieldsOk =
     (!needsRepairNotes || notes.trim().length > 0) &&
@@ -121,7 +136,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
     handledOk &&
     estimateOk &&
     inHouseFieldsOk &&
-    (statusChanged || amountOnlyUpdate)
+    (statusChanged || amountOnlyUpdate || assessmentChanged)
 
   async function handleUpdate() {
     if (!canUpdate) return
@@ -131,7 +146,13 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
       const actor = handledByName.trim()
 
       if (statusChanged) {
-        let logNotes = buildInHouseLogNotes(newStatus, notes, repairContent, replacementParts)
+        let logNotes = buildInHouseLogNotes(
+          newStatus,
+          notes,
+          repairContent,
+          replacementParts,
+          needsCompletionAssessment ? completionAssessment : null,
+        )
         if (newStatus === '見積受取' && parsedEstimate !== null) {
           const extra = `見積金額 ${formatYen(parsedEstimate)}`
           logNotes = logNotes ? `${extra}／${logNotes}` : extra
@@ -156,6 +177,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           estimate_amount?: number | null
           repair_content?: string | null
           replacement_parts?: string | null
+          reception_assessment?: ReceptionAssessment | null
         } = {
           status: newStatus,
           updated_at: new Date().toISOString(),
@@ -166,6 +188,9 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
         if (needsCompletionFields) {
           updatePayload.repair_content = repairContent.trim()
           updatePayload.replacement_parts = replacementParts.trim()
+        }
+        if (needsCompletionAssessment) {
+          updatePayload.reception_assessment = completionAssessment
         }
         const { error: updateError } = await supabase
           .from('requests')
@@ -180,7 +205,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
         const deviceError = await syncDeviceStatusForRepair(
           supabase,
           request.device_id,
-          request.reception_assessment,
+          needsCompletionAssessment ? completionAssessment : request.reception_assessment,
           newStatus,
           request.repair_route,
         )
@@ -232,6 +257,57 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
           entityId: request.id,
           summary: `${REQUEST_TYPE_LABEL[request.type]}: 見積金額を更新`,
           metadata: { estimate_amount: parsedEstimate },
+        })
+      } else if (assessmentChanged) {
+        const prev = request.reception_assessment
+          ? RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]
+          : '（未登録）'
+        const next = RECEPTION_ASSESSMENT_LABEL[completionAssessment]
+        const noteParts = [
+          `${COMPLETION_ASSESSMENT_LABEL}を ${prev} → ${next} に更新`,
+          notes.trim(),
+        ].filter(Boolean)
+        const { error: logError } = await supabase.from('request_logs').insert({
+          request_id: request.id,
+          from_status: request.status,
+          to_status: request.status,
+          changed_by: user?.id ?? null,
+          handled_by_name: actor,
+          notes: noteParts.join('／') || null,
+        })
+        if (logError) {
+          console.error('[依頼] 履歴登録エラー:', logError)
+          alert(`履歴の記録に失敗しました: ${logError.message}`)
+          return
+        }
+        const { error: updateError } = await supabase
+          .from('requests')
+          .update({
+            reception_assessment: completionAssessment,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', request.id)
+        if (updateError) {
+          console.error('[依頼] 完了時判定更新エラー:', updateError)
+          alert(`完了時判定の更新に失敗しました: ${updateError.message}`)
+          return
+        }
+        const deviceError = await syncDeviceStatusForRepair(
+          supabase,
+          request.device_id,
+          completionAssessment,
+          '完了',
+          request.repair_route,
+        )
+        if (deviceError) {
+          alert(`判定は更新されましたが、機器ステータスの更新に失敗しました: ${deviceError}`)
+        }
+        void logAuditEvent(supabase, {
+          action: 'update',
+          entityType: 'request',
+          entityId: request.id,
+          summary: `${REQUEST_TYPE_LABEL[request.type]}: ${COMPLETION_ASSESSMENT_LABEL}を更新`,
+          metadata: { reception_assessment: completionAssessment },
         })
       }
 
@@ -290,9 +366,9 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
               {request.reception_ce_name && (
                 <p className="text-slate-700 font-medium">受付CE: {request.reception_ce_name}</p>
               )}
-              {inHouse && request.reception_assessment && (
+              {inHouse && request.reception_assessment && request.status === '完了' && (
                 <p className="text-slate-700">
-                  受付判定: {RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]}
+                  {COMPLETION_ASSESSMENT_LABEL}: {RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]}
                 </p>
               )}
               {request.type === 'repair' && (
@@ -339,7 +415,7 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
             <p className="text-xs text-slate-500">
               ステータスを進める／見積金額を更新するときは必ず入力してください。履歴に記録されます。
             </p>
-            {!handledOk && (statusChanged || amountOnlyUpdate) && (
+            {!handledOk && (statusChanged || amountOnlyUpdate || assessmentChanged) && (
               <p className="text-xs text-red-600">進行担当者（記名）を入力してください。</p>
             )}
           </div>
@@ -403,6 +479,14 @@ export function StatusUpdateDialog({ request, open, onClose, onUpdated }: Props)
                 />
               </div>
             </>
+          )}
+
+          {canEditCompletionAssessment && (
+            <CompletionAssessmentSelector
+              value={completionAssessment}
+              onChange={setCompletionAssessment}
+              required={needsCompletionAssessment}
+            />
           )}
 
           <div className="space-y-1.5">

@@ -5,7 +5,7 @@ import type {
   RepairRoute,
   Request,
 } from '@/lib/types'
-import { resolveRepairRoute } from '@/lib/types'
+import { RECEPTION_ASSESSMENT_LABEL, resolveRepairRoute } from '@/lib/types'
 
 export function isInHouseRepair(request: Pick<Request, 'repair_route'>): boolean {
   return resolveRepairRoute(request.repair_route) === 'in_house'
@@ -31,11 +31,19 @@ export function advanceRequiresCompletionFields(
   return isInHouseRepair(request) && nextStatus === '修理完了'
 }
 
+export function advanceRequiresCompletionAssessment(
+  request: Pick<Request, 'repair_route'>,
+  nextStatus: string,
+): boolean {
+  return isInHouseRepair(request) && nextStatus === '完了'
+}
+
 export function buildInHouseLogNotes(
   nextStatus: string,
   notes: string,
   repairContent: string,
   replacementParts: string,
+  completionAssessment?: ReceptionAssessment | null,
 ): string | null {
   const parts: string[] = []
   const trimmedNotes = notes.trim()
@@ -49,7 +57,14 @@ export function buildInHouseLogNotes(
     if (trimmedContent) parts.push(`修理内容: ${trimmedContent}`)
     if (trimmedParts) parts.push(`交換パーツ: ${trimmedParts}`)
   }
-  if (!advanceRequiresCompletionFields({ repair_route: 'in_house' }, nextStatus) && trimmedNotes) {
+  if (advanceRequiresCompletionAssessment({ repair_route: 'in_house' }, nextStatus) && completionAssessment) {
+    parts.push(`完了時判定: ${RECEPTION_ASSESSMENT_LABEL[completionAssessment]}`)
+  }
+  if (
+    !advanceRequiresCompletionFields({ repair_route: 'in_house' }, nextStatus) &&
+    !advanceRequiresCompletionAssessment({ repair_route: 'in_house' }, nextStatus) &&
+    trimmedNotes
+  ) {
     parts.push(trimmedNotes)
   }
   return parts.length > 0 ? parts.join('／') : null
@@ -64,18 +79,14 @@ export async function syncDeviceStatusForRepair(
 ): Promise<string | null> {
   if (!deviceId || resolveRepairRoute(repairRoute) !== 'in_house') return null
 
-  if (assessment === 'dispose') {
-    const { error } = await supabase.from('devices').update({ status: 'disposed' }).eq('id', deviceId)
-    return error?.message ?? null
-  }
-
-  if (nextStatus === '修理中' && assessment === 'repair') {
+  if (nextStatus === '修理中') {
     const { error } = await supabase.from('devices').update({ status: 'repair' }).eq('id', deviceId)
     return error?.message ?? null
   }
 
-  if (nextStatus === '完了' && assessment === 'repair') {
-    const { error } = await supabase.from('devices').update({ status: 'active' }).eq('id', deviceId)
+  if (nextStatus === '完了' && assessment) {
+    const status = deviceStatusForAssessment(assessment)
+    const { error } = await supabase.from('devices').update({ status }).eq('id', deviceId)
     return error?.message ?? null
   }
 

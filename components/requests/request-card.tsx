@@ -6,11 +6,13 @@ import {
   Request,
   RECEPTION_ASSESSMENT_LABEL,
   REPAIR_ROUTE_LABEL,
+  ReceptionAssessment,
   getStatusList,
   getNextStatus,
   REQUEST_TYPE_LABEL,
 } from '@/lib/types'
 import {
+  advanceRequiresCompletionAssessment,
   advanceRequiresCompletionFields,
   advanceRequiresRepairNotes,
   buildInHouseLogNotes,
@@ -53,6 +55,10 @@ import {
   History,
 } from 'lucide-react'
 import { coerceEstimateAmount, formatYen } from '@/lib/estimate-amount'
+import {
+  COMPLETION_ASSESSMENT_LABEL,
+  CompletionAssessmentSelector,
+} from '@/components/requests/completion-assessment-selector'
 
 export const REQUEST_STATUS_COLORS: Record<string, string> = {
   '依頼受付': 'bg-slate-100 text-slate-700',
@@ -87,11 +93,11 @@ export function RequestCard({
   const [advanceNotes, setAdvanceNotes] = useState('')
   const [repairContent, setRepairContent] = useState('')
   const [replacementParts, setReplacementParts] = useState('')
+  const [completionAssessment, setCompletionAssessment] = useState<ReceptionAssessment>('repair')
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof fetchRequestLogs>>>([])
 
   const nextStatus = getNextStatus(request.type, request.status, {
     repairRoute: request.repair_route,
-    receptionAssessment: request.reception_assessment,
   })
 
   const loadLogs = useCallback(async () => {
@@ -108,13 +114,14 @@ export function RequestCard({
     setAdvanceNotes('')
     setRepairContent('')
     setReplacementParts('')
+    setCompletionAssessment(request.reception_assessment ?? 'repair')
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('name').eq('id', user.id).maybeSingle().then(({ data }) => {
         setHandledByName(data?.name?.trim() ? data.name : '')
       })
     })
-  }, [advanceOpen, supabase])
+  }, [advanceOpen, request.reception_assessment, supabase])
 
   function openAdvanceConfirm(next: string) {
     setPendingNext(next)
@@ -127,6 +134,7 @@ export function RequestCard({
     setAdvanceNotes('')
     setRepairContent('')
     setReplacementParts('')
+    setCompletionAssessment('repair')
   }
 
   const needsRepairNotes = pendingNext
@@ -134,6 +142,9 @@ export function RequestCard({
     : false
   const needsCompletionFields = pendingNext
     ? advanceRequiresCompletionFields(request, pendingNext)
+    : false
+  const needsCompletionAssessment = pendingNext
+    ? advanceRequiresCompletionAssessment(request, pendingNext)
     : false
 
   const canConfirmAdvance =
@@ -148,7 +159,13 @@ export function RequestCard({
     setUpdating(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const logNotes = buildInHouseLogNotes(next, advanceNotes, repairContent, replacementParts)
+      const logNotes = buildInHouseLogNotes(
+        next,
+        advanceNotes,
+        repairContent,
+        replacementParts,
+        needsCompletionAssessment ? completionAssessment : null,
+      )
 
       const { error: logError } = await supabase.from('request_logs').insert({
         request_id: request.id,
@@ -172,6 +189,9 @@ export function RequestCard({
         updatePayload.repair_content = repairContent.trim()
         updatePayload.replacement_parts = replacementParts.trim()
       }
+      if (needsCompletionAssessment) {
+        updatePayload.reception_assessment = completionAssessment
+      }
 
       const { error: updateError } = await supabase
         .from('requests')
@@ -186,7 +206,7 @@ export function RequestCard({
       const deviceError = await syncDeviceStatusForRepair(
         supabase,
         request.device_id,
-        request.reception_assessment,
+        needsCompletionAssessment ? completionAssessment : request.reception_assessment,
         next,
         request.repair_route,
       )
@@ -220,8 +240,8 @@ export function RequestCard({
   const nextButtonLabel =
     nextStatus === '見積受取'
       ? '見積受取へ（金額は詳細から入力）'
-      : nextStatus === '完了' && request.status === '受付' && isInHouseRepair(request)
-        ? '完了にする（正常／破棄）'
+      : nextStatus === '完了'
+        ? '完了にする（完了時判定）'
         : nextStatus
           ? `次のステップへ: ${nextStatus}`
           : ''
@@ -296,7 +316,7 @@ export function RequestCard({
             )}
             {isInHouseRepair(request) && request.reception_assessment && (
               <div className="flex items-center gap-1.5 text-slate-600">
-                <span className="text-xs text-slate-500">受付判定:</span>
+                <span className="text-xs text-slate-500">{COMPLETION_ASSESSMENT_LABEL}:</span>
                 <Badge variant="outline" className="text-[10px]">
                   {RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]}
                 </Badge>
@@ -456,7 +476,13 @@ export function RequestCard({
                 </div>
               </>
             )}
-            {!needsRepairNotes && !needsCompletionFields && (
+            {needsCompletionAssessment && (
+              <CompletionAssessmentSelector
+                value={completionAssessment}
+                onChange={setCompletionAssessment}
+              />
+            )}
+            {!needsRepairNotes && !needsCompletionFields && !needsCompletionAssessment && (
               <div className="space-y-1.5">
                 <Label htmlFor="advance-notes">備考（任意）</Label>
                 <Textarea

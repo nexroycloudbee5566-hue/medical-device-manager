@@ -26,7 +26,7 @@ export const IN_HOUSE_REPAIR_STATUSES = [
 
 export type RepairRoute = 'manufacturer' | 'in_house'
 
-/** 自施設修理・受付時の機器状態判定 */
+/** 自施設修理・完了時の機器状態判定（DB列名は reception_assessment） */
 export type ReceptionAssessment = 'normal' | 'repair' | 'dispose'
 
 export const PURCHASE_STATUSES = [
@@ -64,16 +64,10 @@ export function getNextStatus(
   current: string,
   options?: {
     repairRoute?: RepairRoute | null
-    receptionAssessment?: ReceptionAssessment | null
   },
 ): string | null {
   const repairRoute = resolveRepairRoute(options?.repairRoute)
   if (type === 'repair' && repairRoute === 'in_house') {
-    if (current === '受付') {
-      const assessment = options?.receptionAssessment
-      if (assessment === 'normal' || assessment === 'dispose') return '完了'
-      return '修理中'
-    }
     const list = IN_HOUSE_REPAIR_STATUSES
     const idx = list.indexOf(current as (typeof IN_HOUSE_REPAIR_STATUSES)[number])
     if (idx === -1 || idx === list.length - 1) return null

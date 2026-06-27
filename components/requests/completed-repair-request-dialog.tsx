@@ -4,14 +4,13 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   Request,
-  RECEPTION_ASSESSMENT_LABEL,
   REPAIR_ROUTE_LABEL,
+  ReceptionAssessment,
   REQUEST_TYPE_LABEL,
 } from '@/lib/types'
 import { fetchRequestLogs, mergeRegistrationNotes } from '@/lib/request-logs'
 import { RequestStatusHistory } from '@/components/requests/request-status-history'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -25,7 +24,11 @@ import {
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { History, Loader2 } from 'lucide-react'
-import { isInHouseRepair } from '@/lib/repair-request'
+import { isInHouseRepair, syncDeviceStatusForRepair } from '@/lib/repair-request'
+import {
+  COMPLETION_ASSESSMENT_LABEL,
+  CompletionAssessmentSelector,
+} from '@/components/requests/completion-assessment-selector'
 import { formatRequestEquipmentWithMeNo, getRequestMeNo } from '@/lib/request-display'
 
 interface Props {
@@ -41,6 +44,7 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
   const [notes, setNotes] = useState('')
   const [repairContent, setRepairContent] = useState('')
   const [replacementParts, setReplacementParts] = useState('')
+  const [completionAssessment, setCompletionAssessment] = useState<ReceptionAssessment>('repair')
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof fetchRequestLogs>>>([])
   const [saving, setSaving] = useState(false)
 
@@ -50,6 +54,7 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
     setNotes(request.notes?.trim() ?? '')
     setRepairContent(request.repair_content?.trim() ?? '')
     setReplacementParts(request.replacement_parts?.trim() ?? '')
+    setCompletionAssessment(request.reception_assessment ?? 'repair')
     void fetchRequestLogs(supabase, request.id).then((rows) => {
       setLogs(mergeRegistrationNotes(rows, request.notes))
     })
@@ -70,6 +75,10 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
     }
     setSaving(true)
     try {
+      const inHouseRepair = isInHouseRepair(request)
+      const assessmentChanged =
+        inHouseRepair && completionAssessment !== (request.reception_assessment ?? 'repair')
+
       const { error } = await supabase
         .from('requests')
         .update({
@@ -77,6 +86,7 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
           notes: notes.trim() || null,
           repair_content: repairContent.trim() || null,
           replacement_parts: replacementParts.trim() || null,
+          ...(inHouseRepair ? { reception_assessment: completionAssessment } : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', request.id)
@@ -84,6 +94,20 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
         alert(`保存に失敗しました: ${error.message}`)
         return
       }
+
+      if (assessmentChanged && request.device_id) {
+        const deviceError = await syncDeviceStatusForRepair(
+          supabase,
+          request.device_id,
+          completionAssessment,
+          '完了',
+          request.repair_route,
+        )
+        if (deviceError) {
+          alert(`保存されましたが、機器ステータスの更新に失敗しました: ${deviceError}`)
+        }
+      }
+
       onUpdated()
       onClose()
     } finally {
@@ -122,11 +146,6 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
             {request.reception_ce_name && (
               <p className="text-slate-600">受付CE: {request.reception_ce_name}</p>
             )}
-            {inHouse && request.reception_assessment && (
-              <p className="text-slate-600">
-                受付判定: {RECEPTION_ASSESSMENT_LABEL[request.reception_assessment]}
-              </p>
-            )}
             <p className="text-slate-500">
               完了日: {format(new Date(request.updated_at), 'yyyy年M月d日 HH:mm', { locale: ja })}
             </p>
@@ -154,6 +173,11 @@ export function CompletedRepairRequestDialog({ request, open, onClose, onUpdated
 
           {inHouse && (
             <>
+              <CompletionAssessmentSelector
+                value={completionAssessment}
+                onChange={setCompletionAssessment}
+                required={false}
+              />
               <div className="space-y-1.5">
                 <Label htmlFor="hist-repair-content">修理内容</Label>
                 <Textarea
