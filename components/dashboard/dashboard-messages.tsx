@@ -193,7 +193,7 @@ export function DashboardMessages() {
       return
     }
     if (emphasized && emphasisColumnMissing) {
-      alert(`強調機能を使うには DB 更新が必要です。\n\n${EMPHASIS_COLUMN_HINT}`)
+      alert(`重要表示を使うには DB 更新が必要です。\n\n${EMPHASIS_COLUMN_HINT}`)
       return
     }
     setSaving(true)
@@ -376,7 +376,7 @@ export function DashboardMessages() {
 
         {emphasisColumnMissing && isAdmin && (
           <div className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <p className="font-medium">強調機能の DB 列（is_emphasized）が未設定です。</p>
+            <p className="font-medium">重要表示の DB 列（is_emphasized）が未設定です。</p>
             <p className="mt-1 text-amber-800">
               Supabase SQL Editor で{' '}
               <code className="bg-amber-100 px-1 rounded">fix_dashboard_messages_emphasized.sql</code>{' '}
@@ -418,7 +418,7 @@ export function DashboardMessages() {
                       )}
                       {msg.is_emphasized && (
                         <Badge className="bg-red-500 text-white border-0 text-[10px] h-5 px-1.5">
-                          強調
+                          重要
                         </Badge>
                       )}
                     </div>
@@ -492,7 +492,7 @@ export function DashboardMessages() {
                       )}
                       onClick={() => setEmphasized((v) => !v)}
                     >
-                      強調
+                      重要
                     </Button>
                   )}
                   <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={resetComposer}>

@@ -1,4 +1,4 @@
--- 強調機能: is_emphasized 列の追加と API キャッシュ更新
+-- 重要表示: is_emphasized 列の追加と API キャッシュ更新
 -- dashboard_messages テーブルが既にある場合はこの 2 行だけ実行してください。
 
 alter table public.dashboard_messages
