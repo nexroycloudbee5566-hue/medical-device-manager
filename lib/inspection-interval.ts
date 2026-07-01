@@ -51,6 +51,63 @@ export function nextDueFromCompletedDate(
   return format(addMonths(base, normalizeIntervalMonths(intervalMonths)), 'yyyy-MM-dd')
 }
 
+/** 指定年に含まれる定期点検予定日（点検期間に基づき複数生成） */
+export function generatePlannedDatesInYear(
+  lastCompletedDate: string | null | undefined,
+  nextMaintenanceDue: string | null | undefined,
+  intervalMonths: number,
+  year: number,
+): string[] {
+  const interval = normalizeIntervalMonths(intervalMonths)
+  const yearStart = startOfDay(new Date(year, 0, 1))
+  const yearEnd = startOfDay(new Date(year, 11, 31))
+
+  const last = parseYmd(lastCompletedDate ?? null)
+  const dueFromLedger = parseYmd(nextMaintenanceDue ?? null)
+
+  if (!last && !dueFromLedger) return []
+
+  let seed: Date = last
+    ? addMonths(last, interval)
+    : dueFromLedger!
+
+  while (seed > yearEnd) {
+    seed = addMonths(seed, -interval)
+  }
+  while (true) {
+    const prev = addMonths(seed, -interval)
+    if (prev < yearStart) break
+    seed = prev
+  }
+
+  const results: string[] = []
+  let cursor: Date = seed
+  while (cursor <= yearEnd) {
+    if (cursor >= yearStart) {
+      results.push(format(cursor, 'yyyy-MM-dd'))
+    }
+    cursor = addMonths(cursor, interval)
+  }
+  return results
+}
+
+/** 予定月に点検完了があるか */
+export function isOccurrenceCompleted(
+  plannedDate: string,
+  completionDates: string[],
+): boolean {
+  const planned = parseYmd(plannedDate)
+  if (!planned) return false
+  return completionDates.some((cd) => {
+    const completed = parseYmd(cd)
+    if (!completed) return false
+    return (
+      completed.getFullYear() === planned.getFullYear() &&
+      completed.getMonth() === planned.getMonth()
+    )
+  })
+}
+
 /** 次回予定: 台帳の next_maintenance_due を優先、なければ最終点検 + 点検期間 */
 export function derivePlannedDate(
   nextMaintenanceDue: string | null | undefined,

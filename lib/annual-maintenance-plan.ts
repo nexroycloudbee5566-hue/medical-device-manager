@@ -2,6 +2,12 @@ import { format, parse, startOfDay, isValid } from 'date-fns'
 import type { Device, MaintenanceModelMaster } from '@/lib/types'
 import { normalizeDeviceStatus } from '@/lib/types'
 import { filterPeriodicMasters, matchMasterForDevice } from '@/lib/maintenance-master'
+import {
+  compareYearMonth,
+  generatePlannedDatesInYear,
+  getIntervalMonthsForDevice,
+  isOccurrenceCompleted,
+} from '@/lib/inspection-interval'
 
 /** 年間計画の対象: 利用中かつメンテナンスマスタ（型式）が登録されている機器 */
 export function deviceEligibleForAnnualPlan(
@@ -12,7 +18,6 @@ export function deviceEligibleForAnnualPlan(
   const periodic = filterPeriodicMasters(masters)
   return matchMasterForDevice(periodic, dev.manufacturer, dev.model, 'periodic') != null
 }
-import { derivePlannedDate, getIntervalMonthsForDevice, compareYearMonth } from '@/lib/inspection-interval'
 
 export type AnnualPlanStatus =
   | 'completed'
@@ -53,10 +58,11 @@ function parseYmd(s: string | null | undefined): Date | null {
 
 function statusForItem(
   plannedDate: string | null,
-  completedInYear: boolean,
+  completionDates: string[],
   today: Date,
 ): AnnualPlanStatus {
-  if (completedInYear) return 'completed'
+  if (!plannedDate) return 'unscheduled'
+  if (isOccurrenceCompleted(plannedDate, completionDates)) return 'completed'
   const planned = parseYmd(plannedDate)
   if (!planned) return 'unscheduled'
   const now = startOfDay(today)
@@ -66,11 +72,16 @@ function statusForItem(
   return 'scheduled'
 }
 
+function hasCompletionInYear(completionDates: string[], year: number): boolean {
+  const prefix = `${year}-`
+  return completionDates.some((cd) => cd.startsWith(prefix))
+}
+
 export function buildAnnualPlanItems(
   devices: Device[],
   masters: MaintenanceModelMaster[],
   latestInspectionByDevice: Map<string, string>,
-  completedInYearByDevice: Set<string>,
+  completionsInYearByDevice: Map<string, string[]>,
   year: number,
   today = new Date(),
 ): AnnualPlanItem[] {
@@ -81,24 +92,50 @@ export function buildAnnualPlanItems(
     if (!deviceEligibleForAnnualPlan(masters, dev)) continue
 
     const lastCompleted = latestInspectionByDevice.get(dev.id) ?? null
+    const completionDates = completionsInYearByDevice.get(dev.id) ?? []
     const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
-    const plannedDate = derivePlannedDate(dev.next_maintenance_due, lastCompleted, intervalMonths)
-    const completedInYear = completedInYearByDevice.has(dev.id)
+    const plannedDates = generatePlannedDatesInYear(
+      lastCompleted,
+      dev.next_maintenance_due,
+      intervalMonths,
+      year,
+    )
+    const completedInYear = hasCompletionInYear(completionDates, year)
 
-    items.push({
-      deviceId: dev.id,
-      name: dev.name,
-      barcode: dev.barcode,
-      manufacturer: dev.manufacturer,
-      model: dev.model,
-      department: dev.department,
-      location: dev.location,
-      hospitalName: dev.hospitals?.name ?? null,
-      plannedDate,
-      lastCompletedDate: lastCompleted,
-      completedInYear,
-      status: statusForItem(plannedDate, completedInYear, todayStart),
-    })
+    if (plannedDates.length === 0) {
+      items.push({
+        deviceId: dev.id,
+        name: dev.name,
+        barcode: dev.barcode,
+        manufacturer: dev.manufacturer,
+        model: dev.model,
+        department: dev.department,
+        location: dev.location,
+        hospitalName: dev.hospitals?.name ?? null,
+        plannedDate: null,
+        lastCompletedDate: lastCompleted,
+        completedInYear,
+        status: 'unscheduled',
+      })
+      continue
+    }
+
+    for (const plannedDate of plannedDates) {
+      items.push({
+        deviceId: dev.id,
+        name: dev.name,
+        barcode: dev.barcode,
+        manufacturer: dev.manufacturer,
+        model: dev.model,
+        department: dev.department,
+        location: dev.location,
+        hospitalName: dev.hospitals?.name ?? null,
+        plannedDate,
+        lastCompletedDate: lastCompleted,
+        completedInYear,
+        status: statusForItem(plannedDate, completionDates, todayStart),
+      })
+    }
   }
 
   items.sort((a, b) => {
@@ -137,14 +174,6 @@ export function groupPlanByMonth(
   }
 
   for (const item of items) {
-    if (item.completedInYear && item.lastCompletedDate) {
-      const d = parseYmd(item.lastCompletedDate)
-      if (d && d.getFullYear() === year) {
-        byMonth.get(d.getMonth() + 1)!.push(item)
-        continue
-      }
-    }
-
     if (!item.plannedDate) {
       if (!item.completedInYear) unscheduled.push(item)
       continue
@@ -158,12 +187,12 @@ export function groupPlanByMonth(
 
     const plannedYear = planned.getFullYear()
 
-    if (plannedYear < year && !item.completedInYear) {
+    if (plannedYear < year && item.status !== 'completed') {
       overdue.push(item)
       continue
     }
 
-    if (plannedYear > year && !item.completedInYear) {
+    if (plannedYear > year && item.status !== 'completed') {
       if (!futureByYear.has(plannedYear)) futureByYear.set(plannedYear, [])
       futureByYear.get(plannedYear)!.push(item)
       continue
@@ -174,7 +203,7 @@ export function groupPlanByMonth(
       continue
     }
 
-    if (!item.completedInYear) unscheduled.push(item)
+    if (item.status !== 'completed') unscheduled.push(item)
   }
 
   const monthLabels = [
@@ -213,13 +242,23 @@ export function groupPlanByMonth(
 }
 
 export function summarizeAnnualPlan(items: AnnualPlanItem[]) {
+  const deviceIds = new Set(items.map((i) => i.deviceId))
+  const devicesCompleted = new Set(
+    items.filter((i) => i.completedInYear).map((i) => i.deviceId),
+  )
+  const devicesOverdue = new Set(
+    items.filter((i) => i.status === 'overdue').map((i) => i.deviceId),
+  )
+  const devicesUnscheduled = new Set(
+    items.filter((i) => i.status === 'unscheduled').map((i) => i.deviceId),
+  )
   return {
-    total: items.length,
-    completed: items.filter((i) => i.completedInYear).length,
-    overdue: items.filter((i) => i.status === 'overdue').length,
-    unscheduled: items.filter((i) => i.status === 'unscheduled').length,
+    total: deviceIds.size,
+    completed: devicesCompleted.size,
+    overdue: devicesOverdue.size,
+    unscheduled: devicesUnscheduled.size,
     scheduledThisYear: items.filter((i) => {
-      if (!i.plannedDate || i.completedInYear) return false
+      if (!i.plannedDate || i.status === 'completed') return false
       return i.status === 'scheduled' || i.status === 'due_this_month' || i.status === 'overdue'
     }).length,
   }
