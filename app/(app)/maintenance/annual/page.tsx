@@ -177,9 +177,7 @@ function AnnualPlanBoard({
               {col.items.length === 0 ? (
                 <p className="text-[10px] text-slate-300 text-center py-4">—</p>
               ) : (
-                col.items.map((item) => (
-                  <PlanChip key={`${col.key}-${item.deviceId}`} item={item} />
-                ))
+                col.items.map((item) => <PlanChip key={item.deviceId} item={item} />)
               )}
             </div>
           </div>
@@ -304,7 +302,7 @@ export default function AnnualMaintenancePage() {
             年間メンテナンス計画
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            {year}年の次回点検予定を月別表示します（1台1件。過去月の予定は点検期間に沿って繰り上げ表示）。
+            {year}年の次回点検予定を月別表示します（1台1件。対象: 利用中かつメンテナンスマスタ登録済みの機器）。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

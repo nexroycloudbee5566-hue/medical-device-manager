@@ -68,38 +68,6 @@ export function derivePlannedDate(
   return null
 }
 
-/**
- * 予定月が過去のとき、点検期間ごとに繰り上げて「今後の次回予定月」を返す。
- * 毎月点検などで 6 月予定のまま 7 月になっても、表示上は 7 月列に載せる。
- */
-export function rollPlannedDateToCurrentOrFutureMonth(
-  plannedYmd: string,
-  intervalMonths: number,
-  today = new Date(),
-): string {
-  const interval = normalizeIntervalMonths(intervalMonths)
-  let due = parseYmd(plannedYmd)
-  if (!due) return plannedYmd
-
-  const now = startOfDay(today)
-  while (isDueMonthPast(due, now)) {
-    due = addMonths(due, interval)
-  }
-  return format(due, 'yyyy-MM-dd')
-}
-
-/** 年間計画・一覧用: 次回点検予定日（過去月は点検期間に沿って繰り上げ） */
-export function deriveDisplayPlannedDate(
-  nextMaintenanceDue: string | null | undefined,
-  lastCompletedDate: string | null | undefined,
-  intervalMonths = DEFAULT_INSPECTION_INTERVAL_MONTHS,
-  today = new Date(),
-): string | null {
-  const raw = derivePlannedDate(nextMaintenanceDue, lastCompletedDate, intervalMonths)
-  if (!raw) return null
-  return rollPlannedDateToCurrentOrFutureMonth(raw, intervalMonths, today)
-}
-
 /** 点検期限日（最終点検 + 期間）。未点検は null */
 export function inspectionDueDate(
   lastCompletedDate: string | null | undefined,
