@@ -177,7 +177,9 @@ function AnnualPlanBoard({
               {col.items.length === 0 ? (
                 <p className="text-[10px] text-slate-300 text-center py-4">—</p>
               ) : (
-                col.items.map((item) => <PlanChip key={item.deviceId} item={item} />)
+                col.items.map((item) => (
+                  <PlanChip key={`${col.key}-${item.deviceId}`} item={item} />
+                ))
               )}
             </div>
           </div>

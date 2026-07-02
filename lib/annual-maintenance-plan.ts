@@ -7,6 +7,7 @@ import {
   completedInspectionInMonth,
   deriveDisplayPlannedDate,
   getIntervalMonthsForDevice,
+  isInspectionStale,
 } from '@/lib/inspection-interval'
 
 /** 年間計画の対象: 利用中かつメンテナンスマスタ（型式）が登録されている機器 */
@@ -59,11 +60,13 @@ function parseYmd(s: string | null | undefined): Date | null {
 function statusForItem(
   plannedDate: string | null,
   lastCompletedDate: string | null,
+  isStale: boolean,
   today: Date,
 ): AnnualPlanStatus {
   const planned = parseYmd(plannedDate)
   if (!planned) return 'unscheduled'
   if (completedInspectionInMonth(lastCompletedDate, planned)) return 'completed'
+  if (isStale) return 'overdue'
   const now = startOfDay(today)
   const monthCmp = compareYearMonth(planned, now)
   if (monthCmp < 0) return 'overdue'
@@ -93,6 +96,12 @@ export function buildAnnualPlanItems(
       intervalMonths,
       todayStart,
     )
+    const isStale = isInspectionStale(
+      lastCompleted,
+      intervalMonths,
+      dev.next_maintenance_due,
+      todayStart,
+    )
     const completedInYear = completedInYearByDevice.has(dev.id)
 
     items.push({
@@ -107,7 +116,7 @@ export function buildAnnualPlanItems(
       plannedDate,
       lastCompletedDate: lastCompleted,
       completedInYear,
-      status: statusForItem(plannedDate, lastCompleted, todayStart),
+      status: statusForItem(plannedDate, lastCompleted, isStale, todayStart),
     })
   }
 
@@ -173,6 +182,9 @@ export function groupPlanByMonth(
 
     if (plannedYear === year) {
       byMonth.get(planned.getMonth() + 1)!.push(item)
+      if (item.status === 'overdue') {
+        overdue.push(item)
+      }
       continue
     }
 
