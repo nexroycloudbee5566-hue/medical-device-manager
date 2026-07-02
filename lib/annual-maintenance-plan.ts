@@ -4,7 +4,8 @@ import { normalizeDeviceStatus } from '@/lib/types'
 import { filterPeriodicMasters, matchMasterForDevice } from '@/lib/maintenance-master'
 import {
   compareYearMonth,
-  derivePlannedDate,
+  completedInspectionInMonth,
+  deriveDisplayPlannedDate,
   getIntervalMonthsForDevice,
 } from '@/lib/inspection-interval'
 
@@ -57,12 +58,12 @@ function parseYmd(s: string | null | undefined): Date | null {
 
 function statusForItem(
   plannedDate: string | null,
-  completedInYear: boolean,
+  lastCompletedDate: string | null,
   today: Date,
 ): AnnualPlanStatus {
-  if (completedInYear) return 'completed'
   const planned = parseYmd(plannedDate)
   if (!planned) return 'unscheduled'
+  if (completedInspectionInMonth(lastCompletedDate, planned)) return 'completed'
   const now = startOfDay(today)
   const monthCmp = compareYearMonth(planned, now)
   if (monthCmp < 0) return 'overdue'
@@ -86,7 +87,12 @@ export function buildAnnualPlanItems(
 
     const lastCompleted = latestInspectionByDevice.get(dev.id) ?? null
     const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
-    const plannedDate = derivePlannedDate(dev.next_maintenance_due, lastCompleted, intervalMonths)
+    const plannedDate = deriveDisplayPlannedDate(
+      dev.next_maintenance_due,
+      lastCompleted,
+      intervalMonths,
+      todayStart,
+    )
     const completedInYear = completedInYearByDevice.has(dev.id)
 
     items.push({
@@ -101,7 +107,7 @@ export function buildAnnualPlanItems(
       plannedDate,
       lastCompletedDate: lastCompleted,
       completedInYear,
-      status: statusForItem(plannedDate, completedInYear, todayStart),
+      status: statusForItem(plannedDate, lastCompleted, todayStart),
     })
   }
 
@@ -141,14 +147,6 @@ export function groupPlanByMonth(
   }
 
   for (const item of items) {
-    if (item.completedInYear && item.lastCompletedDate) {
-      const d = parseYmd(item.lastCompletedDate)
-      if (d && d.getFullYear() === year) {
-        byMonth.get(d.getMonth() + 1)!.push(item)
-        continue
-      }
-    }
-
     if (!item.plannedDate) {
       if (!item.completedInYear) unscheduled.push(item)
       continue
@@ -162,12 +160,12 @@ export function groupPlanByMonth(
 
     const plannedYear = planned.getFullYear()
 
-    if (plannedYear < year && !item.completedInYear) {
+    if (plannedYear < year && !item.completedInYear && item.status !== 'completed') {
       overdue.push(item)
       continue
     }
 
-    if (plannedYear > year && !item.completedInYear) {
+    if (plannedYear > year && !item.completedInYear && item.status !== 'completed') {
       if (!futureByYear.has(plannedYear)) futureByYear.set(plannedYear, [])
       futureByYear.get(plannedYear)!.push(item)
       continue

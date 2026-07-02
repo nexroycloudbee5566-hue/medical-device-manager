@@ -8,12 +8,13 @@ import {
   mapMaintenanceModelMasterRow,
 } from '@/lib/maintenance-master'
 import {
+  completedInspectionInMonth,
+  deriveDisplayPlannedDate,
   derivePlannedDate,
   getIntervalMonthsForDevice,
-  isInspectionStale,
   inspectionDueDate,
+  isInspectionStale,
   isPlannedInMonth,
-  completedInspectionInMonth,
 } from '@/lib/inspection-interval'
 
 export type PeriodicInspectionDeviceRow = Pick<
@@ -58,7 +59,12 @@ export function buildPeriodicInspectionLists(
 
     const last = latestByDevice.get(dev.id) ?? null
     const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
-    const plannedDate = derivePlannedDate(dev.next_maintenance_due, last, intervalMonths)
+    const plannedDate = deriveDisplayPlannedDate(
+      dev.next_maintenance_due,
+      last,
+      intervalMonths,
+      todayStart,
+    )
 
     const entry: PeriodicInspectionEntry = {
       device: dev,
@@ -70,7 +76,9 @@ export function buildPeriodicInspectionLists(
     const hasItems = deviceHasInspectionMaster(periodicMasters, dev)
     const staleFlag = isInspectionStale(last, intervalMonths, dev.next_maintenance_due, todayStart)
     const monthFlag =
-      isPlannedInMonth(plannedDate, todayStart) && !completedInspectionInMonth(last, todayStart)
+      plannedDate != null &&
+      isPlannedInMonth(plannedDate, todayStart) &&
+      !completedInspectionInMonth(last, todayStart)
 
     if (monthFlag) dueMonth.push(entry)
 
