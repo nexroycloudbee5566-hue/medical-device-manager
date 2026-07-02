@@ -177,12 +177,7 @@ function AnnualPlanBoard({
               {col.items.length === 0 ? (
                 <p className="text-[10px] text-slate-300 text-center py-4">—</p>
               ) : (
-                col.items.map((item) => (
-                  <PlanChip
-                    key={`${item.deviceId}-${item.plannedDate ?? 'none'}`}
-                    item={item}
-                  />
-                ))
+                col.items.map((item) => <PlanChip key={item.deviceId} item={item} />)
               )}
             </div>
           </div>
@@ -245,18 +240,14 @@ export default function AnnualMaintenancePage() {
     )
 
     const latestByDevice = new Map<string, string>()
-    const completionsInYearByDevice = new Map<string, string[]>()
+    const completedInYear = new Set<string>()
     for (const row of records ?? []) {
       const did = row.device_id as string | null
       const cd = (row.completed_date as string | null)?.slice(0, 10)
       if (!did || !cd) continue
       const prev = latestByDevice.get(did)
       if (!prev || cd > prev) latestByDevice.set(did, cd)
-      if (cd >= yearStart && cd <= yearEnd) {
-        const list = completionsInYearByDevice.get(did) ?? []
-        list.push(cd)
-        completionsInYearByDevice.set(did, list)
-      }
+      if (cd >= yearStart && cd <= yearEnd) completedInYear.add(did)
     }
 
     let devices = (devicesRaw ?? []) as Device[]
@@ -268,7 +259,7 @@ export default function AnnualMaintenancePage() {
       devices,
       masters,
       latestByDevice,
-      completionsInYearByDevice,
+      completedInYear,
       year,
     )
     setItems(planItems)
@@ -311,7 +302,7 @@ export default function AnnualMaintenancePage() {
             年間メンテナンス計画
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            {year}年の定期点検予定を月別表示します（点検期間に応じて各月に複数回表示。対象: 利用中かつメンテナンスマスタ登録済みの機器）。
+            {year}年の次回点検予定を月別表示します（1台1件。対象: 利用中かつメンテナンスマスタ登録済みの機器）。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
