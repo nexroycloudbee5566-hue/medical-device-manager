@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { normalizePinInput } from '@/lib/pin-input'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -26,9 +25,12 @@ export function LoginForm({ mode, staff, admin }: Props) {
   const listError = current.error
   const listHint = current.hint
   const [profileId, setProfileId] = useState('')
-  const [pin, setPin] = useState('')
+  const [pinLength, setPinLength] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const pinInputRef = useRef<HTMLInputElement>(null)
+  const pinCounterRef = useRef<HTMLParagraphElement>(null)
+  const isComposingRef = useRef(false)
 
   const pinLen = mode === 'admin' ? 8 : 6
 
@@ -45,8 +47,54 @@ export function LoginForm({ mode, staff, admin }: Props) {
     )
   }, [profiles])
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault()
+  const readPinFromField = useCallback(() => {
+    const raw = pinInputRef.current?.value ?? ''
+    return normalizePinInput(raw, pinLen)
+  }, [pinLen])
+
+  const updatePinCounterText = useCallback(
+    (length: number) => {
+      const text =
+        length === pinLen
+          ? `PIN ${pinLen} 桁入力済み — ログインできます`
+          : `${pinLen} 桁の半角数字を入力（現在 ${length} / ${pinLen} 桁）`
+      const node = pinCounterRef.current
+      if (node) {
+        node.textContent = text
+        node.className = cn(
+          'text-xs',
+          length === pinLen ? 'text-green-700 font-medium' : 'text-slate-500',
+        )
+      }
+    },
+    [pinLen],
+  )
+
+  const syncPinField = useCallback(() => {
+    const el = pinInputRef.current
+    if (!el) return
+    const next = normalizePinInput(el.value, pinLen)
+    if (el.value !== next) el.value = next
+    setPinLength(next.length)
+    updatePinCounterText(next.length)
+  }, [pinLen, updatePinCounterText])
+
+  const pinInputMount = useCallback(
+    (el: HTMLInputElement | null) => {
+      pinInputRef.current = el
+      if (!el) return
+      const onNative = () => syncPinField()
+      el.addEventListener('input', onNative)
+      el.addEventListener('change', onNative)
+      el.addEventListener('keyup', onNative)
+    },
+    [syncPinField],
+  )
+
+  async function doLogin() {
+    syncPinField()
+    const pin = readPinFromField()
+
     if (!effectiveProfileId) {
       setError('ユーザーを選択してください（名前のボタンをクリック）')
       return
@@ -77,8 +125,8 @@ export function LoginForm({ mode, staff, admin }: Props) {
     router.refresh()
   }
 
-  const pinReady = pin.length === pinLen
-  const canSubmit = Boolean(effectiveProfileId) && pinReady && !loading
+  const pinReady = pinLength === pinLen
+  const canSubmit = Boolean(effectiveProfileId) && !loading
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
@@ -97,10 +145,13 @@ export function LoginForm({ mode, staff, admin }: Props) {
           <CardHeader className="pb-4 space-y-4">
             <div className="space-y-1">
               <CardTitle className="text-lg">PIN でログイン</CardTitle>
-              <CardDescription>
-                {mode === 'admin'
-                  ? '管理者モード — PIN は 8 桁の数字です'
-                  : '一般用モード — PIN は 6 桁の数字です'}
+              <CardDescription className="space-y-1">
+                <span>
+                  {mode === 'admin'
+                    ? '管理者モード — PIN は 8 桁の数字です'
+                    : '一般用モード — PIN は 6 桁の数字です'}
+                </span>
+                <span className="block text-[10px] text-slate-400">ログイン画面 2026-03-22版</span>
               </CardDescription>
             </div>
 
@@ -133,7 +184,7 @@ export function LoginForm({ mode, staff, admin }: Props) {
           </CardHeader>
 
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
@@ -192,40 +243,60 @@ export function LoginForm({ mode, staff, admin }: Props) {
               <div className="space-y-2">
                 <Label htmlFor="pin">PIN（{pinLen}桁）</Label>
                 <input
+                  ref={pinInputMount}
                   id="pin"
                   inputMode="numeric"
-                  autoComplete="off"
-                  type="password"
-                  pattern="\d*"
+                  autoComplete="one-time-code"
+                  type="tel"
+                  pattern="[0-9]*"
                   maxLength={pinLen}
                   placeholder={mode === 'admin' ? '12345678' : '123456'}
-                  value={pin}
-                  onChange={(e) => setPin(normalizePinInput(e.target.value, pinLen))}
-                  required
                   className={cn(
-                    'h-9 w-full rounded-lg border border-input bg-white px-3 py-1 text-base shadow-xs',
-                    'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+                    'h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-1',
+                    'text-center text-xl font-mono tracking-[0.35em] text-slate-900 shadow-xs',
+                    'outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/30',
                   )}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true
+                  }}
+                  onCompositionEnd={() => {
+                    isComposingRef.current = false
+                    syncPinField()
+                  }}
+                  onInput={() => {
+                    if (!isComposingRef.current) syncPinField()
+                  }}
+                  onChange={() => syncPinField()}
+                  onKeyUp={() => syncPinField()}
+                  onPaste={() => {
+                    window.setTimeout(() => syncPinField(), 0)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void doLogin()
+                    }
+                  }}
                 />
                 <p
-                  className={cn(
-                    'text-xs',
-                    pinReady ? 'text-green-700' : 'text-slate-500',
-                  )}
+                  ref={pinCounterRef}
+                  className={cn('text-xs', pinReady ? 'text-green-700 font-medium' : 'text-slate-500')}
+                  aria-live="polite"
                 >
                   {pinReady
-                    ? `PIN ${pinLen} 桁入力済み`
-                    : `${pinLen} 桁の数字を入力してください（現在 ${pin.length} / ${pinLen} 桁）`}
+                    ? `PIN ${pinLen} 桁入力済み — ログインできます`
+                    : `${pinLen} 桁の半角数字を入力（現在 ${pinLength} / ${pinLen} 桁）`}
                 </p>
               </div>
-              {!effectiveProfileId && profiles.length > 0 && (
-                <p className="text-xs text-amber-700">↑ ログインする名前をクリックして選択してください</p>
-              )}
-              <Button
-                type="submit"
-                className="w-full"
+              <button
+                type="button"
+                className={cn(
+                  'inline-flex w-full h-10 items-center justify-center rounded-lg text-sm font-medium transition-colors',
+                  'bg-primary text-primary-foreground hover:bg-primary/90',
+                  'disabled:pointer-events-none disabled:opacity-50',
+                )}
                 disabled={!canSubmit}
-                variant={canSubmit ? 'default' : 'secondary'}
+                onClick={() => void doLogin()}
               >
                 {loading ? (
                   <>
@@ -235,8 +306,8 @@ export function LoginForm({ mode, staff, admin }: Props) {
                 ) : (
                   'ログイン'
                 )}
-              </Button>
-            </form>
+              </button>
+            </div>
           </CardContent>
         </Card>
 
