@@ -1,6 +1,18 @@
 # 医療機器管理システム
 
-グループ病院向けの医療機器管理・依頼管理Webアプリケーション。
+グループ病院向けの医療機器管理・依頼管理 Web アプリケーション。
+
+## 運用方針
+
+| 項目 | 内容 |
+|------|------|
+| **アプリ** | 各 PC でローカル起動（`起動.bat`） |
+| **データ** | Supabase クラウド（全 PC で同じ DB を共有） |
+| **ホスティング** | Vercel 等は **使用しない** |
+
+他の PC への配布・日常運用は **[docs/ローカル利用ガイド.md](./docs/ローカル利用ガイド.md)** を参照してください。
+
+---
 
 ## セットアップ（3ステップ）
 
@@ -81,15 +93,13 @@ notify pgrst, 'reload schema';
 
 Next.js 16 + TypeScript + Supabase (PostgreSQL / Auth / Realtime) + Tailwind CSS + shadcn/ui
 
-## 本番デプロイ (Vercel)
+## クイック起動（Windows）
 
-詳細手順は **[DEPLOY.md](./DEPLOY.md)** を参照してください。
+1. `.env.local` を用意（[.env.local.example](./.env.local.example) 参照）
+2. **`起動.bat`** をダブルクリック（初回は `npm install` 自動実行）
 
-1. Supabase にスキーマ適用・管理者作成（ローカル `/setup` 推奨）
-2. GitHub にリポジトリをプッシュ
-3. [Vercel](https://vercel.com) にインポート
-4. 環境変数を設定:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-5. デプロイ後、Supabase の **Authentication → URL Configuration** に本番 URL を登録
+不調時は **`キャッシュクリアして起動.bat`**。配布用の短いメモは **[配布メモ.txt](./配布メモ.txt)**。
+
+## デプロイ（ホスティング）
+
+インターネット公開は行いません。詳細は **[DEPLOY.md](./DEPLOY.md)**（ローカル利用ガイドへのリンク）を参照してください。

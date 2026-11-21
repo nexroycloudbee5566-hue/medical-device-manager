@@ -17,6 +17,7 @@ import {
   DAILY_INSPECTION_RECORD_TYPE,
   type DailyInspectionEntry,
 } from '@/lib/daily-inspection'
+import { ensureBrowserSession } from '@/lib/ensure-browser-session'
 
 type Props = {
   /** ダッシュボード用のコンパクト表示 */
@@ -45,6 +46,7 @@ export function DailyInspectionTodayList({
 
   const fetchList = useCallback(async () => {
     setLoading(true)
+    await ensureBrowserSession(supabase)
     const todayStr = format(new Date(), 'yyyy-MM-dd')
     const [devRes, dailyRes, masRes] = await Promise.all([
       supabase.from('devices').select('*'),

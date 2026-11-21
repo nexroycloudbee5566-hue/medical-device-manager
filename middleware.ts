@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { isAuthBypassEnabled } from '@/lib/auth-bypass'
+import { tryDevAutoLogin } from '@/lib/dev-auto-login'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -16,13 +17,10 @@ export async function middleware(request: NextRequest) {
 
   const bypass = isAuthBypassEnabled()
 
-  if (bypass) {
-    if (pathname === '/' || pathname.startsWith('/auth')) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
-    }
-    return NextResponse.next({ request })
+  if (bypass && (pathname === '/' || pathname.startsWith('/auth'))) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
   }
 
   let supabaseResponse = NextResponse.next({ request })
@@ -47,6 +45,13 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
+
+  if (bypass) {
+    if (!user) {
+      supabaseResponse = await tryDevAutoLogin(request, supabaseResponse)
+    }
+    return supabaseResponse
+  }
 
   if (pathname === '/auth' || pathname === '/auth/') {
     const url = request.nextUrl.clone()

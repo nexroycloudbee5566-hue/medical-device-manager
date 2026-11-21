@@ -28,6 +28,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ensureBrowserSession } from '@/lib/ensure-browser-session'
 
 function isEmphasizedColumnError(message: string) {
   return message.includes('is_emphasized') || message.includes('schema cache')
@@ -79,6 +80,7 @@ export function DashboardMessages() {
   }, [supabase])
 
   const fetchMessages = useCallback(async () => {
+    await ensureBrowserSession(supabase)
     const { data, error } = await supabase
       .from('dashboard_messages')
       .select('*')

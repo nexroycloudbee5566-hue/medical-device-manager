@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/sidebar'
+import { DevSessionProvider } from '@/components/dev-session-provider'
 import { isAuthBypassEnabled } from '@/lib/auth-bypass'
 import type { Profile } from '@/lib/types'
 
@@ -32,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex h-full">
       <Sidebar profile={profile} userEmail={user?.email ?? ''} />
       <main className="flex-1 overflow-y-auto bg-slate-50">
-        {children}
+        <DevSessionProvider enabled={bypass}>{children}</DevSessionProvider>
       </main>
     </div>
   )

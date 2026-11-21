@@ -43,6 +43,7 @@ import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
 import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
 import { intervalMonthsLabel, formatMonthsPastDueLabel } from '@/lib/inspection-interval'
 import { mapPeriodicInspectionRows } from '@/lib/periodic-inspection-lists'
+import { ensureBrowserSession } from '@/lib/ensure-browser-session'
 
 type InspectionDeviceRow = Pick<
   Device,
@@ -138,6 +139,7 @@ export default function DashboardPage() {
   const [diagOpen, setDiagOpen] = useState(false)
 
   const fetchInspectionLists = useCallback(async () => {
+    await ensureBrowserSession(supabase)
     const [devRes, recRes, masRes] = await Promise.all([
       // select('*') で全カラム取得（存在しないカラム指定エラーを回避）
       supabase.from('devices').select('*'),
@@ -221,15 +223,19 @@ export default function DashboardPage() {
   }, [supabase])
 
   const fetchRequests = useCallback(async () => {
-    const { data } = await supabase
-      .from('requests')
-      .select(
-        'id, type, status, device_id, requested_equipment, description, devices(name, barcode)',
-      )
-      .neq('status', '完了')
-    setRequests(((data ?? []) as unknown) as Request[])
-    setLoading(false)
-    void fetchInspectionLists()
+    try {
+      await ensureBrowserSession(supabase)
+      const { data } = await supabase
+        .from('requests')
+        .select(
+          'id, type, status, device_id, requested_equipment, description, devices(name, barcode)',
+        )
+        .neq('status', '完了')
+      setRequests(((data ?? []) as unknown) as Request[])
+      void fetchInspectionLists()
+    } finally {
+      setLoading(false)
+    }
   }, [supabase, fetchInspectionLists])
 
   useEffect(() => {

@@ -36,7 +36,7 @@
 
    - [Edge 用](https://microsoftedge.microsoft.com/addons/detail/brother-bpac-extension/kmopihekhjobijiipnloimfdgjddbnhg)
 
-3. 拡張機能の詳細設定で **このアプリの URL**（例: `https://xxxx.vercel.app` または `http://localhost:3000`）を **オン** にする
+3. 拡張機能の詳細設定で **このアプリの URL**（例: `http://127.0.0.1:3000`）を **オン** にする
 
 4. P-touch Editor でラベルテンプレート（`.lbx`）を作成
 

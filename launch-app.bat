@@ -40,13 +40,15 @@ if not exist "node_modules\" (
   echo.
 )
 
-echo 準備ができたらブラウザでログイン画面を開きます。
+echo 準備ができたらブラウザでアプリを開きます。
+echo データは Supabase クラウドと同期します（他 PC と共有）。
+echo 詳細: docs\ローカル利用ガイド.md
 echo.
 echo ※ この黒い画面を閉じるとアプリは停止します。
 echo    止めるときはこの画面で Ctrl + C を押すか、右上の × で閉じてください。
 echo.
 
-start "" cmd /c "timeout /t 8 /nobreak >nul & start http://127.0.0.1:3000/auth/login"
+start "" cmd /c "timeout /t 8 /nobreak >nul & start http://127.0.0.1:3000/"
 
 call npm run dev
 
