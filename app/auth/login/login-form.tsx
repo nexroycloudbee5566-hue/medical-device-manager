@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { normalizePinInput } from '@/lib/pin-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,20 +26,44 @@ export function LoginForm({ mode, staff, admin }: Props) {
   const profiles = current.profiles
   const listError = current.error
   const listHint = current.hint
-  const [profileId, setProfileId] = useState(profiles[0]?.id ?? '')
+  const [profileId, setProfileId] = useState('')
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  const pinLen = mode === 'admin' ? 8 : 6
+
+  const effectiveProfileId =
+    profileId && profiles.some((p) => p.id === profileId) ? profileId : (profiles[0]?.id ?? '')
+
+  useEffect(() => {
+    if (profiles.length === 0) {
+      setProfileId('')
+      return
+    }
+    setProfileId((current) =>
+      current && profiles.some((p) => p.id === current) ? current : (profiles[0]?.id ?? ''),
+    )
+  }, [profiles])
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
+    if (!effectiveProfileId) {
+      setError('ユーザーを選択してください（名前のボタンをクリック）')
+      return
+    }
+    if (pin.length !== pinLen) {
+      setError(`PIN は ${pinLen} 桁の数字です（現在 ${pin.length} 桁）`)
+      return
+    }
+
     setLoading(true)
     setError(null)
 
     const res = await fetch('/api/auth/pin-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileId, pin, mode }),
+      body: JSON.stringify({ profileId: effectiveProfileId, pin, mode }),
     })
 
     const data = await res.json().catch(() => ({}))
@@ -53,7 +78,8 @@ export function LoginForm({ mode, staff, admin }: Props) {
     router.refresh()
   }
 
-  const pinLen = mode === 'admin' ? 8 : 6
+  const pinReady = pin.length === pinLen
+  const canSubmit = Boolean(effectiveProfileId) && pinReady && !loading
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
@@ -119,21 +145,31 @@ export function LoginForm({ mode, staff, admin }: Props) {
                 <Label>ユーザー</Label>
                 {profiles.length > 0 ? (
                   <div className="grid gap-2" role="listbox" aria-label="ユーザー">
-                    {profiles.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setProfileId(p.id)}
-                        className={cn(
-                          'w-full rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors',
-                          profileId === p.id
-                            ? 'border-blue-600 bg-blue-50 text-blue-900'
-                            : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300',
-                        )}
-                      >
-                        {p.name || '（名前未設定）'}
-                      </button>
-                    ))}
+                    {profiles.map((p) => {
+                      const selected = effectiveProfileId === p.id
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => {
+                            setProfileId(p.id)
+                            setError(null)
+                          }}
+                          className={cn(
+                            'w-full rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors',
+                            selected
+                              ? 'border-blue-600 bg-blue-50 text-blue-900 ring-2 ring-blue-600/30'
+                              : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300',
+                          )}
+                        >
+                          {p.name || '（名前未設定）'}
+                          {selected && (
+                            <span className="ml-2 text-xs font-normal text-blue-700">選択中</span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-3 py-2">
@@ -165,11 +201,29 @@ export function LoginForm({ mode, staff, admin }: Props) {
                   maxLength={pinLen}
                   placeholder={mode === 'admin' ? '12345678' : '123456'}
                   value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, pinLen))}
+                  onChange={(e) => setPin(normalizePinInput(e.target.value, pinLen))}
                   required
                 />
+                <p
+                  className={cn(
+                    'text-xs',
+                    pinReady ? 'text-green-700' : 'text-slate-500',
+                  )}
+                >
+                  {pinReady
+                    ? `PIN ${pinLen} 桁入力済み`
+                    : `${pinLen} 桁の数字を入力してください（現在 ${pin.length} / ${pinLen} 桁）`}
+                </p>
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !profileId || pin.length !== pinLen}>
+              {!effectiveProfileId && profiles.length > 0 && (
+                <p className="text-xs text-amber-700">↑ ログインする名前をクリックして選択してください</p>
+              )}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={!canSubmit}
+                variant={canSubmit ? 'default' : 'secondary'}
+              >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
