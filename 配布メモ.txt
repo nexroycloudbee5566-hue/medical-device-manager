@@ -14,3 +14,7 @@
 
 【データ】
   全 PC 同じ Supabase を見るので、機器・点検・依頼は共有されます。
+
+【一般用 PC に渡すとき】
+  ・PIN で入る: .env.local に ALLOW_PIN_LOGIN_BYPASS=false → ログイン「一般用」
+  ・省略＋一般用権限: DEV_AUTO_LOGIN_ROLE=staff（詳細は docs\ローカル利用ガイド.md）

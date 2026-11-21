@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { syntheticEmailForPinAuth } from '@/lib/pin-auth'
 import { isAuthBypassEnabled } from '@/lib/auth-bypass'
+import { resolveDevAutoLoginProfileId } from '@/lib/dev-auto-login-profile'
 
 /** 開発用: 未ログインなら最初の管理者で自動サインイン（RLS 用） */
 export async function tryDevAutoLogin(request: NextRequest, response: NextResponse) {
@@ -37,26 +38,19 @@ export async function tryDevAutoLogin(request: NextRequest, response: NextRespon
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('id')
-    .eq('role', 'admin')
-    .order('created_at')
-    .limit(1)
-    .maybeSingle()
-
-  if (!profile?.id) return nextResponse
+  const profileId = await resolveDevAutoLoginProfileId(admin)
+  if (!profileId) return nextResponse
 
   const { data: secretRow } = await admin
     .from('profile_auth_secrets')
     .select('login_secret')
-    .eq('user_id', profile.id)
+    .eq('user_id', profileId)
     .maybeSingle()
 
   if (!secretRow?.login_secret) return nextResponse
 
   const { error } = await supabase.auth.signInWithPassword({
-    email: syntheticEmailForPinAuth(profile.id),
+    email: syntheticEmailForPinAuth(profileId),
     password: secretRow.login_secret,
   })
 

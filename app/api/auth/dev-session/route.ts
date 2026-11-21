@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { isAuthBypassEnabled } from '@/lib/auth-bypass'
 import { syntheticEmailForPinAuth } from '@/lib/pin-auth'
+import { resolveDevAutoLoginProfileId } from '@/lib/dev-auto-login-profile'
 
 export const runtime = 'nodejs'
 
@@ -43,29 +44,26 @@ export async function POST() {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('id')
-    .eq('role', 'admin')
-    .limit(1)
-    .maybeSingle()
-
-  if (!profile?.id) {
-    return NextResponse.json({ error: '管理者ユーザーがありません' }, { status: 500 })
+  const profileId = await resolveDevAutoLoginProfileId(admin)
+  if (!profileId) {
+    return NextResponse.json(
+      { error: '自動ログイン用のユーザーが見つかりません（DEV_AUTO_LOGIN_* を確認）' },
+      { status: 500 },
+    )
   }
 
   const { data: secretRow } = await admin
     .from('profile_auth_secrets')
     .select('login_secret')
-    .eq('user_id', profile.id)
+    .eq('user_id', profileId)
     .maybeSingle()
 
   if (!secretRow?.login_secret) {
-    return NextResponse.json({ error: 'PIN 未設定の管理者です' }, { status: 500 })
+    return NextResponse.json({ error: 'PIN 未設定のユーザーです' }, { status: 500 })
   }
 
   const { error } = await supabase.auth.signInWithPassword({
-    email: syntheticEmailForPinAuth(profile.id),
+    email: syntheticEmailForPinAuth(profileId),
     password: secretRow.login_secret,
   })
 
