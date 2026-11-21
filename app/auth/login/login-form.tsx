@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { isPinLoginBypassEnabled } from '@/lib/pin-login-bypass'
+import { isPinLoginBypassEnabled } from '@/lib/auth-bypass'
 import { normalizePinInput } from '@/lib/pin-input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'

@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'
 import { syntheticEmailForPinAuth, validateAdminPin, validateStaffPin } from '@/lib/pin-auth'
 import { verifyPin } from '@/lib/pin-user-server'
 import { clientInfoFromRequest, recordLoginAttempt } from '@/lib/audit-log-server'
-import { isPinLoginBypassEnabled } from '@/lib/pin-login-bypass'
+import { isPinLoginBypassEnabled } from '@/lib/auth-bypass'
 
 export const runtime = 'nodejs'
 

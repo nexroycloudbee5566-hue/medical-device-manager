@@ -1,0 +1,63 @@
+import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import type { NextRequest, NextResponse } from 'next/server'
+import { syntheticEmailForPinAuth } from '@/lib/pin-auth'
+import { isAuthBypassEnabled } from '@/lib/auth-bypass'
+
+/** 開発用: 未ログインなら最初の管理者で自動サインイン（RLS 用） */
+export async function tryDevAutoLogin(request: NextRequest, response: NextResponse) {
+  if (!isAuthBypassEnabled()) return response
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '')
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !anonKey || !serviceRoleKey) return response
+
+  let nextResponse = response
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+        nextResponse = NextResponse.next({ request })
+        cookiesToSet.forEach(({ name, value, options }) =>
+          nextResponse.cookies.set(name, value, options),
+        )
+      },
+    },
+  })
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) return nextResponse
+
+  const admin = createClient(url, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('role', 'admin')
+    .limit(1)
+    .maybeSingle()
+
+  if (!profile?.id) return nextResponse
+
+  const { data: secretRow } = await admin
+    .from('profile_auth_secrets')
+    .select('login_secret')
+    .eq('user_id', profile.id)
+    .maybeSingle()
+
+  if (!secretRow?.login_secret) return nextResponse
+
+  await supabase.auth.signInWithPassword({
+    email: syntheticEmailForPinAuth(profile.id),
+    password: secretRow.login_secret,
+  })
+
+  return nextResponse
+}
