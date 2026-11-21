@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { syntheticEmailForPinAuth, validateAdminPin, validateStaffPin } from '@/lib/pin-auth'
 import { verifyPin } from '@/lib/pin-user-server'
 import { clientInfoFromRequest, recordLoginAttempt } from '@/lib/audit-log-server'
+import { isPinLoginBypassEnabled } from '@/lib/pin-login-bypass'
 
 export const runtime = 'nodejs'
 
@@ -48,13 +49,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '入力が不正です' }, { status: 400 })
   }
 
-  if (mode === 'admin' && !validateAdminPin(pin)) {
-    await logFailure('PIN形式不正（管理者）')
-    return NextResponse.json({ error: '管理者PINは8桁の数字です' }, { status: 400 })
-  }
-  if (mode === 'staff' && !validateStaffPin(pin)) {
-    await logFailure('PIN形式不正（一般）')
-    return NextResponse.json({ error: '一般用PINは6桁の数字です' }, { status: 400 })
+  const bypassPin = isPinLoginBypassEnabled()
+
+  if (!bypassPin) {
+    if (mode === 'admin' && !validateAdminPin(pin)) {
+      await logFailure('PIN形式不正（管理者）')
+      return NextResponse.json({ error: '管理者PINは8桁の数字です' }, { status: 400 })
+    }
+    if (mode === 'staff' && !validateStaffPin(pin)) {
+      await logFailure('PIN形式不正（一般）')
+      return NextResponse.json({ error: '一般用PINは6桁の数字です' }, { status: 400 })
+    }
   }
 
   const admin = createClient(url.replace(/\/$/, ''), serviceRoleKey, {
@@ -96,14 +101,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'PINログインが設定されていません。管理者に連絡してください。' }, { status: 401 })
   }
 
-  const pinOk = await verifyPin(pin, secretRow.pin_hash)
-  if (!pinOk) {
-    await logFailure('PINが正しくありません', {
-      userId: profile.id,
-      userName: profile.name,
-      role: profile.role as 'admin' | 'staff',
-    })
-    return NextResponse.json({ error: 'PINが正しくありません' }, { status: 401 })
+  if (!bypassPin) {
+    const pinOk = await verifyPin(pin, secretRow.pin_hash)
+    if (!pinOk) {
+      await logFailure('PINが正しくありません', {
+        userId: profile.id,
+        userName: profile.name,
+        role: profile.role as 'admin' | 'staff',
+      })
+      return NextResponse.json({ error: 'PINが正しくありません' }, { status: 401 })
+    }
   }
 
   const cookieStore = await cookies()

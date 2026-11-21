@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { isPinLoginBypassEnabled } from '@/lib/pin-login-bypass'
 import { normalizePinInput } from '@/lib/pin-input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -20,18 +21,15 @@ type Props = {
 
 export function LoginForm({ mode, staff, admin }: Props) {
   const router = useRouter()
+  const bypassPin = isPinLoginBypassEnabled()
   const current = mode === 'admin' ? admin : staff
   const profiles = current.profiles
   const listError = current.error
-  const listHint = current.hint
   const [profileId, setProfileId] = useState('')
-  const [pinDigits, setPinDigits] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const pinRef = useRef<HTMLInputElement>(null)
 
   const pinLen = mode === 'admin' ? 8 : 6
-
   const effectiveProfileId =
     profileId && profiles.some((p) => p.id === profileId) ? profileId : (profiles[0]?.id ?? '')
 
@@ -40,28 +38,15 @@ export function LoginForm({ mode, staff, admin }: Props) {
       setProfileId('')
       return
     }
-    setProfileId((current) =>
-      current && profiles.some((p) => p.id === current) ? current : (profiles[0]?.id ?? ''),
+    setProfileId((cur) =>
+      cur && profiles.some((p) => p.id === cur) ? cur : (profiles[0]?.id ?? ''),
     )
   }, [profiles])
 
-  function syncPinFromInput(el: HTMLInputElement) {
-    const next = normalizePinInput(el.value, pinLen)
-    if (el.value !== next) el.value = next
-    setPinDigits(next.length)
-  }
-
-  async function doLogin() {
-    const el = pinRef.current
-    if (el) syncPinFromInput(el)
-    const pin = normalizePinInput(el?.value ?? '', pinLen)
-
-    if (!effectiveProfileId) {
-      setError('ユーザーを選択してください（名前のボタンをクリック）')
-      return
-    }
-    if (pin.length !== pinLen) {
-      setError(`PIN は ${pinLen} 桁の数字です（現在 ${pin.length} 桁）`)
+  async function doLogin(opts?: { profileOverride?: string }) {
+    const id = opts?.profileOverride ?? effectiveProfileId
+    if (!id) {
+      setError('ユーザーが選択されていません')
       return
     }
 
@@ -71,7 +56,11 @@ export function LoginForm({ mode, staff, admin }: Props) {
     const res = await fetch('/api/auth/pin-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileId: effectiveProfileId, pin, mode }),
+      body: JSON.stringify({
+        profileId: id,
+        pin: bypassPin ? '00000000' : '',
+        mode,
+      }),
     })
 
     const data = await res.json().catch(() => ({}))
@@ -85,8 +74,6 @@ export function LoginForm({ mode, staff, admin }: Props) {
     router.push('/dashboard')
     router.refresh()
   }
-
-  const pinOk = pinDigits === pinLen
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
@@ -103,24 +90,25 @@ export function LoginForm({ mode, staff, admin }: Props) {
 
         <Card className="shadow-lg border-0">
           <CardHeader className="pb-4 space-y-4">
-            <div className="space-y-1">
-              <CardTitle className="text-lg">PIN でログイン</CardTitle>
-              <CardDescription className="space-y-1">
-                <span>
-                  {mode === 'admin'
-                    ? '管理者モード — PIN は 8 桁の数字です'
-                    : '一般用モード — PIN は 6 桁の数字です'}
+            <CardTitle className="text-lg">ログイン</CardTitle>
+            <CardDescription>
+              {bypassPin ? (
+                <span className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 block text-xs">
+                  ローカル開発モード：名前を選んで「ログイン」で PIN なしで入れます（本番では無効）
                 </span>
-                <span className="block text-[10px] text-slate-400">ログイン画面 2026-03-22c</span>
-              </CardDescription>
-            </div>
+              ) : mode === 'admin' ? (
+                '管理者 — PIN は 8 桁'
+              ) : (
+                '一般用 — PIN は 6 桁'
+              )}
+            </CardDescription>
 
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
               <a
                 href="/auth/login"
                 className={cn(
                   'flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium',
-                  mode === 'staff' ? 'bg-white text-slate-800 shadow' : 'text-slate-500',
+                  mode === 'staff' ? 'bg-white shadow' : 'text-slate-500',
                 )}
               >
                 <User className="h-4 w-4" /> 一般用
@@ -129,7 +117,7 @@ export function LoginForm({ mode, staff, admin }: Props) {
                 href="/auth/login?mode=admin"
                 className={cn(
                   'flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium',
-                  mode === 'admin' ? 'bg-white text-slate-800 shadow' : 'text-slate-500',
+                  mode === 'admin' ? 'bg-white shadow' : 'text-slate-500',
                 )}
               >
                 <ShieldCheck className="h-4 w-4" /> 管理者
@@ -144,67 +132,136 @@ export function LoginForm({ mode, staff, admin }: Props) {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+            {listError && <p className="text-xs text-destructive">{listError}</p>}
 
             <div className="space-y-2">
-              <Label>ユーザー</Label>
-              {profiles.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    setProfileId(p.id)
-                    setError(null)
-                  }}
-                  className={cn(
-                    'w-full rounded-lg border px-3 py-2.5 text-left text-sm font-medium',
-                    effectiveProfileId === p.id
-                      ? 'border-blue-600 bg-blue-50 text-blue-900'
-                      : 'border-slate-200 bg-white',
-                  )}
-                >
-                  {p.name}
-                  {effectiveProfileId === p.id && (
-                    <span className="ml-2 text-xs text-blue-700">選択中</span>
-                  )}
-                </button>
-              ))}
-              {listError && <p className="text-xs text-destructive">{listError}</p>}
+              <Label>ユーザー（クリックで選択）</Label>
+              {profiles.length === 0 ? (
+                <p className="text-sm text-slate-500">選択できるユーザーがありません</p>
+              ) : (
+                profiles.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => {
+                      setProfileId(p.id)
+                      setError(null)
+                      if (bypassPin) void doLogin({ profileOverride: p.id })
+                    }}
+                    className={cn(
+                      'w-full rounded-lg border px-3 py-3 text-left text-sm font-medium',
+                      effectiveProfileId === p.id
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-slate-200 bg-white hover:bg-slate-50',
+                    )}
+                  >
+                    {p.name}
+                    {bypassPin && (
+                      <span className="block text-xs text-slate-500 mt-0.5">タップでログイン</span>
+                    )}
+                  </button>
+                ))
+              )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="login-pin">PIN（{pinLen}桁）</Label>
-              <input
-                ref={pinRef}
-                id="login-pin"
-                type="tel"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={pinLen}
-                defaultValue=""
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-lg font-mono"
-                onInput={(e) => syncPinFromInput(e.currentTarget)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void doLogin()
-                }}
-              />
-              <p className={cn('text-xs', pinOk ? 'text-green-700 font-medium' : 'text-slate-500')}>
-                {pinOk
-                  ? `PIN ${pinLen} 桁入力済み`
-                  : `${pinLen} 桁の半角数字（現在 ${pinDigits} / ${pinLen}）`}
-              </p>
-            </div>
+            {!bypassPin && (
+              <PinLoginFields pinLen={pinLen} mode={mode} profileId={effectiveProfileId} setError={setError} />
+            )}
 
-            <button
-              type="button"
-              className="h-10 w-full rounded-lg bg-slate-900 text-sm font-medium text-white disabled:opacity-50"
-              disabled={loading || !effectiveProfileId}
-              onClick={() => void doLogin()}
-            >
-              {loading ? 'ログイン中…' : 'ログイン'}
-            </button>
+            {bypassPin ? (
+              <button
+                type="button"
+                className="h-10 w-full rounded-lg bg-slate-900 text-sm font-medium text-white disabled:opacity-50"
+                disabled={loading || !effectiveProfileId}
+                onClick={() => void doLogin()}
+              >
+                {loading ? 'ログイン中…' : 'ログイン（PIN不要）'}
+              </button>
+            ) : null}
           </CardContent>
         </Card>
       </div>
     </div>
+  )
+}
+
+function PinLoginFields({
+  pinLen,
+  mode,
+  profileId,
+  setError,
+}: {
+  pinLen: number
+  mode: LoginMode
+  profileId: string
+  setError: (msg: string | null) => void
+}) {
+  const router = useRouter()
+  const [pinDigits, setPinDigits] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  async function submit(pin: string) {
+    if (!profileId) {
+      setError('ユーザーを選択してください')
+      return
+    }
+    if (pin.length !== pinLen) {
+      setError(`PIN は ${pinLen} 桁です`)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    const res = await fetch('/api/auth/pin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId, pin, mode }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setLoading(false)
+    if (!res.ok) {
+      setError(typeof data.error === 'string' ? data.error : 'ログイン失敗')
+      return
+    }
+    router.push('/dashboard')
+    router.refresh()
+  }
+
+  return (
+    <>
+      <Label htmlFor="login-pin">PIN（{pinLen}桁）</Label>
+      <input
+        id="login-pin"
+        type="tel"
+        inputMode="numeric"
+        maxLength={pinLen}
+        className="h-11 w-full rounded-lg border border-slate-300 px-3 text-center font-mono text-lg"
+        onInput={(e) => {
+          const el = e.currentTarget
+          const next = normalizePinInput(el.value, pinLen)
+          if (el.value !== next) el.value = next
+          setPinDigits(next.length)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            void submit(normalizePinInput(e.currentTarget.value, pinLen))
+          }
+        }}
+      />
+      <p className="text-xs text-slate-500">
+        現在 {pinDigits} / {pinLen} 桁
+      </p>
+      <button
+        type="button"
+        disabled={loading || !profileId || pinDigits !== pinLen}
+        className="h-10 w-full rounded-lg bg-slate-900 text-sm text-white disabled:opacity-50"
+        onClick={() => {
+          const el = document.getElementById('login-pin') as HTMLInputElement | null
+          void submit(normalizePinInput(el?.value ?? '', pinLen))
+        }}
+      >
+        {loading ? 'ログイン中…' : 'ログイン'}
+      </button>
+    </>
   )
 }
