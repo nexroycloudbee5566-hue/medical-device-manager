@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { normalizePinInput } from '@/lib/pin-input'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -192,7 +191,7 @@ export function LoginForm({ mode, staff, admin }: Props) {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="pin">PIN（{pinLen}桁）</Label>
-                <Input
+                <input
                   id="pin"
                   inputMode="numeric"
                   autoComplete="off"
@@ -203,6 +202,10 @@ export function LoginForm({ mode, staff, admin }: Props) {
                   value={pin}
                   onChange={(e) => setPin(normalizePinInput(e.target.value, pinLen))}
                   required
+                  className={cn(
+                    'h-9 w-full rounded-lg border border-input bg-white px-3 py-1 text-base shadow-xs',
+                    'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+                  )}
                 />
                 <p
                   className={cn(
