@@ -1,7 +1,9 @@
 ﻿# デスクトップに「医療機器管理を起動」ショートカットを作成（担当者用）
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$target = Join-Path $root '医療機器管理を起動.vbs'
+$bat = Join-Path $root '医療機器管理を起動.bat'
+$vbs = Join-Path $root '医療機器管理を起動.vbs'
+$target = if (Test-Path -LiteralPath $bat) { $bat } else { $vbs }
 $desktop = [Environment]::GetFolderPath('Desktop')
 $lnk = Join-Path $desktop '医療機器管理を起動.lnk'
 

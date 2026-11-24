@@ -97,7 +97,7 @@ Next.js 16 + TypeScript + Supabase (PostgreSQL / Auth / Realtime) + Tailwind CSS
 
 | 誰 | やること |
 |----|----------|
-| **職員** | デスクトップの **「医療機器管理を起動」**（[医療機器管理を起動.vbs](./医療機器管理を起動.vbs) のショートカット）→ PIN ログイン |
+| **職員** | デスクトップの **「医療機器管理を起動」**（[医療機器管理を起動.bat](./医療機器管理を起動.bat) のショートカット）→ PIN ログイン |
 | **担当者（初回）** | `.env.local` 配置 → `scripts/create-desktop-shortcut.ps1` |
 
 - 手順1枚: **[docs/職員用_開き方.txt](./docs/職員用_開き方.txt)**
