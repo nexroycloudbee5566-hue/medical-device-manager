@@ -1,4 +1,5 @@
 import { fetchPinLoginProfiles } from '@/lib/profile-options'
+import { isAuthBypassEnabled } from '@/lib/auth-bypass'
 import { LoginForm } from './login-form'
 
 export const dynamic = 'force-dynamic'
@@ -16,5 +17,13 @@ export default async function LoginPage({ searchParams }: Props) {
     fetchPinLoginProfiles('admin'),
   ])
 
-  return <LoginForm key={mode} mode={mode} staff={staff} admin={admin} />
+  return (
+    <LoginForm
+      key={mode}
+      mode={mode}
+      staff={staff}
+      admin={admin}
+      bypassPin={isAuthBypassEnabled()}
+    />
+  )
 }

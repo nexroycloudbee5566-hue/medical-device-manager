@@ -66,6 +66,12 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && pathname.startsWith('/auth')) {
+    if (
+      !bypass &&
+      (pathname === '/auth/login' || pathname.startsWith('/auth/login/'))
+    ) {
+      return supabaseResponse
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)

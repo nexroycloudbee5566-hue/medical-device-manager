@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { isPinLoginBypassEnabled } from '@/lib/auth-bypass'
 import { normalizePinInput } from '@/lib/pin-input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,11 +16,11 @@ type Props = {
   mode: LoginMode
   staff: ProfileOptionsResult
   admin: ProfileOptionsResult
+  bypassPin: boolean
 }
 
-export function LoginForm({ mode, staff, admin }: Props) {
+export function LoginForm({ mode, staff, admin, bypassPin }: Props) {
   const router = useRouter()
-  const bypassPin = isPinLoginBypassEnabled()
   const current = mode === 'admin' ? admin : staff
   const profiles = current.profiles
   const listError = current.error
