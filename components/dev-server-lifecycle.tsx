@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 
-const HEARTBEAT_MS = 12_000
+const HEARTBEAT_MS = 8_000
 
 function getTabId() {
   const key = 'mdm-dev-tab-id'
@@ -14,6 +14,23 @@ function getTabId() {
   return id
 }
 
+function postLifecycle(action: string, tabId: string) {
+  const payload = JSON.stringify({ action, tabId })
+  if (action === 'leave' && typeof navigator.sendBeacon === 'function') {
+    navigator.sendBeacon(
+      '/api/dev/lifecycle',
+      new Blob([payload], { type: 'application/json' }),
+    )
+    return
+  }
+  void fetch('/api/dev/lifecycle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: action === 'leave',
+  }).catch(() => {})
+}
+
 /** 開発時: ブラウザを閉じたら npm run dev を止める */
 export function DevServerLifecycle() {
   useEffect(() => {
@@ -21,20 +38,11 @@ export function DevServerLifecycle() {
 
     const tabId = getTabId()
 
-    const post = (action: string) => {
-      void fetch('/api/dev/lifecycle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, tabId }),
-        keepalive: action === 'leave',
-      }).catch(() => {})
-    }
+    postLifecycle('enter', tabId)
 
-    post('enter')
+    const beat = setInterval(() => postLifecycle('heartbeat', tabId), HEARTBEAT_MS)
 
-    const beat = setInterval(() => post('heartbeat'), HEARTBEAT_MS)
-
-    const onLeave = () => post('leave')
+    const onLeave = () => postLifecycle('leave', tabId)
     window.addEventListener('pagehide', onLeave)
 
     return () => {
