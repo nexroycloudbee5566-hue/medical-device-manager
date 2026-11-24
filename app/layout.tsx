@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist } from 'next/font/google'
 import './globals.css'
+import { DevServerLifecycle } from '@/components/dev-server-lifecycle'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
 
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className="h-full bg-background text-foreground antialiased"
         suppressHydrationWarning
       >
+        <DevServerLifecycle />
         {children}
       </body>
     </html>
