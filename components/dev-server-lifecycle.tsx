@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react'
 
-const HEARTBEAT_MS = 8_000
+/** バックグラウンドタブでも生存確認用（サーバー停止判定には使わない） */
+const HEARTBEAT_MS = 60_000
 
 function getTabId() {
   const key = 'mdm-dev-tab-id'
@@ -44,10 +45,15 @@ export function DevServerLifecycle() {
 
     const onLeave = () => postLifecycle('leave', tabId)
     window.addEventListener('pagehide', onLeave)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') postLifecycle('heartbeat', tabId)
+    }
+    document.addEventListener('visibilitychange', onVisible)
 
     return () => {
       clearInterval(beat)
       window.removeEventListener('pagehide', onLeave)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
 

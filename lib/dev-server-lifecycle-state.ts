@@ -1,13 +1,9 @@
 /** 開発用ローカルサーバー: ブラウザタブ数（サーバー1プロセス内） */
 
 const SHUTDOWN_DELAY_MS = 3_000
-const TAB_STALE_MS = 18_000
-const SWEEP_MS = 4_000
 
 const activeTabIds = new Set<string>()
-const lastSeenAt = new Map<string, number>()
 let shutdownTimer: ReturnType<typeof setTimeout> | null = null
-let sweeperStarted = false
 
 function cancelShutdown() {
   if (shutdownTimer) {
@@ -39,47 +35,23 @@ function scheduleShutdown() {
   }, SHUTDOWN_DELAY_MS)
 }
 
-function touchTab(tabId: string) {
+export function devLifecycleEnter(tabId: string) {
   if (!tabId) return
   activeTabIds.add(tabId)
-  lastSeenAt.set(tabId, Date.now())
   cancelShutdown()
-}
-
-function sweepStaleTabs() {
-  if (!devLifecycleIsEnabled()) return
-  const now = Date.now()
-  for (const id of [...activeTabIds]) {
-    const seen = lastSeenAt.get(id) ?? 0
-    if (now - seen > TAB_STALE_MS) {
-      activeTabIds.delete(id)
-      lastSeenAt.delete(id)
-    }
-  }
-  if (activeTabIds.size === 0) scheduleShutdown()
-}
-
-function ensureSweeper() {
-  if (sweeperStarted || !devLifecycleIsEnabled()) return
-  sweeperStarted = true
-  setInterval(sweepStaleTabs, SWEEP_MS)
-}
-
-export function devLifecycleEnter(tabId: string) {
-  ensureSweeper()
-  touchTab(tabId)
 }
 
 export function devLifecycleLeave(tabId: string) {
   if (!tabId) return
   activeTabIds.delete(tabId)
-  lastSeenAt.delete(tabId)
   scheduleShutdown()
 }
 
+/** タブが生存している印（操作不要・時間経過ではサーバーを止めない） */
 export function devLifecycleHeartbeat(tabId: string) {
-  ensureSweeper()
-  touchTab(tabId)
+  if (!tabId) return
+  activeTabIds.add(tabId)
+  cancelShutdown()
 }
 
 export function devLifecycleIsEnabled() {
