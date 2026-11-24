@@ -220,10 +220,12 @@ export interface MaintenanceModelMaster {
   model: string
   /** periodic=定期点検（ダッシュボード・年間計画対象） / daily=日常点検 */
   master_type: MaintenanceMasterType
+  /** 定期点検サイクル名（任意。空なら周期ラベルを表示） */
+  name: string
   checklist_items: MaintenanceChecklistItem[]
   /** 型式ごとのメンテナンス方法・手順（自由記述） */
   maintenance_method: string | null
-  /** 定期点検の周期（月）。型式ごとに設定 */
+  /** 定期点検の周期（月）。同一型式で複数サイクルを持てる */
   inspection_interval_months: number
   created_at: string
   updated_at: string
@@ -298,6 +300,8 @@ export interface MaintenanceRecord {
   maintenance_model_master_id?: string | null
   /** 旧: Record<key, 'ok'|'ng'|'na'> / 新: ChecklistResultEntry オブジェクト */
   checklist_results?: Record<string, unknown> | null
+  /** true のとき定期点検の一時保存（未完了） */
+  is_draft?: boolean
   devices?: Device
   profiles?: Profile
   maintenance_model_masters?: MaintenanceModelMaster

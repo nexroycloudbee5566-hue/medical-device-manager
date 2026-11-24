@@ -33,6 +33,7 @@ import {
   matchMasterForDevice,
   parseChecklistItems,
   defaultResultsForItems,
+  parseChecklistResultsFromDb,
   applyBulkOk,
   legacyItemsIncomplete,
   serializeResultsForDb,
@@ -48,6 +49,10 @@ import {
 import { MaintenanceChecklistRowInput } from '@/components/maintenance-checklist-row-input'
 import { DeviceRepairHistory } from '@/components/devices/device-repair-history'
 import { PeriodicInspectionDueList } from '@/components/maintenance/periodic-inspection-due-list'
+import {
+  fetchPeriodicDraftForDevice,
+  isPeriodicInspectionDraft,
+} from '@/lib/periodic-inspection-draft'
 
 function MaintenancePageContent() {
   const searchParams = useSearchParams()
@@ -61,6 +66,8 @@ function MaintenancePageContent() {
   const [completedDate, setCompletedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [draftSaving, setDraftSaving] = useState(false)
+  const [draftRecordId, setDraftRecordId] = useState<string | null>(null)
   const [masterReloading, setMasterReloading] = useState(false)
   const [dueEdit, setDueEdit] = useState('')
   const [dueSaving, setDueSaving] = useState(false)
@@ -91,11 +98,9 @@ function MaintenancePageContent() {
   useEffect(() => {
     if (!device) {
       setChecklistResults({})
-      return
+      setDraftRecordId(null)
     }
-    const m = matchMasterForDevice(masters, device.manufacturer, device.model, 'periodic')
-    setChecklistResults(defaultResultsForItems(m?.checklist_items ?? []))
-  }, [device, masters])
+  }, [device])
 
   const loadRecentForDevice = useCallback(
     async (deviceId: string) => {
@@ -130,12 +135,30 @@ function MaintenancePageContent() {
 
   const applyLoadedDevice = useCallback(
     async (data: Device) => {
-      await fetchMasters()
+      const list = await fetchMasters()
+      const master = matchMasterForDevice(list, data.manufacturer, data.model, 'periodic')
+      const items = master?.checklist_items ?? []
+      const draft = await fetchPeriodicDraftForDevice(supabase, data.id)
+
       setDevice(data)
-      setCompletedDate(format(new Date(), 'yyyy-MM-dd'))
-      setNotes('')
+
+      if (draft) {
+        setDraftRecordId(draft.id)
+        setNotes(draft.notes?.trim() ?? '')
+        setCompletedDate(
+          draft.completed_date?.slice(0, 10) ?? format(new Date(), 'yyyy-MM-dd'),
+        )
+        const fromDraft = parseChecklistResultsFromDb(draft.checklist_results)
+        const base = defaultResultsForItems(items)
+        setChecklistResults({ ...base, ...fromDraft })
+      } else {
+        setDraftRecordId(null)
+        setCompletedDate(format(new Date(), 'yyyy-MM-dd'))
+        setNotes('')
+        setChecklistResults(defaultResultsForItems(items))
+      }
     },
-    [fetchMasters],
+    [fetchMasters, supabase],
   )
 
   const loadDeviceFromQuery = useCallback(
@@ -208,6 +231,7 @@ function MaintenancePageContent() {
     setRecentRecords([])
     setChecklistResults({})
     setDueEdit('')
+    setDraftRecordId(null)
   }
 
   async function saveNextMaintenanceDue(clear = false) {
@@ -241,6 +265,70 @@ function MaintenancePageContent() {
     }
   }
 
+  async function saveDraft() {
+    if (!device) return
+    if (!masterForDevice) {
+      alert('マスタがないため一時保存できません。')
+      return
+    }
+
+    setDraftSaving(true)
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const items = masterForDevice.checklist_items ?? []
+      const checklist_results = items.length > 0 ? serializeResultsForDb(checklistResults) : null
+      const dateYmd = completedDate?.trim() || format(new Date(), 'yyyy-MM-dd')
+
+      const payload = {
+        device_id: device.id,
+        type: '定期点検' as const,
+        is_draft: true,
+        scheduled_date: null,
+        completed_date: dateYmd,
+        result: null,
+        notes: notes.trim() || null,
+        maintenance_model_master_id: masterForDevice.id,
+        checklist_results,
+        created_by: user?.id ?? null,
+      }
+
+      if (draftRecordId) {
+        const { error } = await supabase
+          .from('maintenance_records')
+          .update(payload)
+          .eq('id', draftRecordId)
+        if (error) {
+          alert(`一時保存に失敗しました: ${error.message}`)
+          return
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('maintenance_records')
+          .insert(payload)
+          .select('id')
+          .maybeSingle()
+        if (error) {
+          alert(`一時保存に失敗しました: ${error.message}`)
+          return
+        }
+        if (data?.id) setDraftRecordId(data.id as string)
+      }
+
+      void logAuditEvent(supabase, {
+        action: 'update',
+        entityType: 'maintenance_record',
+        entityId: device.id,
+        summary: `定期点検を一時保存（${device.barcode ?? device.name}）`,
+      })
+      await loadRecentForDevice(device.id)
+      alert('一時保存しました。この機器を開き直すと入力内容が復元されます。')
+    } finally {
+      setDraftSaving(false)
+    }
+  }
+
   async function submitInspection(e: React.FormEvent) {
     e.preventDefault()
     if (!device) return
@@ -265,9 +353,10 @@ function MaintenancePageContent() {
       const checklist_results =
         items.length > 0 ? serializeResultsForDb(checklistResults) : null
 
-      await supabase.from('maintenance_records').insert({
+      const recordPayload = {
         device_id: device.id,
         type: '定期点検',
+        is_draft: false,
         scheduled_date: null,
         completed_date: completedDate,
         result: null,
@@ -275,7 +364,25 @@ function MaintenancePageContent() {
         maintenance_model_master_id: masterForDevice?.id ?? null,
         checklist_results,
         created_by: user?.id ?? null,
-      })
+      }
+
+      if (draftRecordId) {
+        const { error: updErr } = await supabase
+          .from('maintenance_records')
+          .update(recordPayload)
+          .eq('id', draftRecordId)
+        if (updErr) {
+          alert(`点検記録の保存に失敗しました: ${updErr.message}`)
+          return
+        }
+      } else {
+        const { error: insErr } = await supabase.from('maintenance_records').insert(recordPayload)
+        if (insErr) {
+          alert(`点検記録の保存に失敗しました: ${insErr.message}`)
+          return
+        }
+      }
+      setDraftRecordId(null)
 
       const intervalMonths = masterForDevice?.inspection_interval_months ?? 12
       const nextDue = nextDueFromCompletedDate(completedDate, intervalMonths)
@@ -533,6 +640,7 @@ function MaintenancePageContent() {
                     </TableHeader>
                     <TableBody>
                       {recentRecords.map((rec) => {
+                        const isDraft = isPeriodicInspectionDraft(rec)
                         const lines = describeMaintenanceChecklistLines(
                           rec.checklist_results ?? {},
                           rec.maintenance_model_masters?.checklist_items,
@@ -542,6 +650,11 @@ function MaintenancePageContent() {
                         return (
                           <TableRow key={rec.id}>
                             <TableCell className="text-xs align-top">
+                              {isDraft ? (
+                                <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-900">
+                                  一時保存
+                                </Badge>
+                              ) : null}
                               {rec.completed_date
                                 ? format(new Date(rec.completed_date), 'yyyy/MM/dd', {
                                     locale: ja,
@@ -642,6 +755,12 @@ function MaintenancePageContent() {
                 </p>
               )}
 
+              {draftRecordId && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  一時保存した内容を読み込んでいます。完了したら「点検を記録する」を押してください。
+                </div>
+              )}
+
               <form onSubmit={submitInspection} className="space-y-4">
                 {masterForDevice && templateItems.length > 0 && (
                   <div className="space-y-2">
@@ -698,10 +817,22 @@ function MaintenancePageContent() {
                   />
                 </div>
 
-                <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
-                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  点検を記録する
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={draftSaving || saving || !masterForDevice}
+                    onClick={() => void saveDraft()}
+                  >
+                    {draftSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    一時保存
+                  </Button>
+                  <Button type="submit" className="w-full sm:w-auto" disabled={saving || draftSaving}>
+                    {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    点検を記録する
+                  </Button>
+                </div>
               </form>
             </CardContent>
           </Card>

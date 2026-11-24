@@ -11,6 +11,10 @@ import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { maintenanceInspectionHref } from '@/lib/maintenance-inspection-url'
 import {
+  fetchPeriodicDraftList,
+  type PeriodicDraftListEntry,
+} from '@/lib/periodic-inspection-draft'
+import {
   mapPeriodicInspectionRows,
   type PeriodicInspectionEntry,
   type PeriodicInspectionListMeta,
@@ -112,6 +116,58 @@ function DueThisMonthPanel({
           </ul>
         )}
       </div>
+    </div>
+  )
+}
+
+function DraftListPanel({
+  loading,
+  entries,
+}: {
+  loading: boolean
+  entries: PeriodicDraftListEntry[]
+}) {
+  if (!loading && entries.length === 0) return null
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/80 shadow-sm overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-amber-100 flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-amber-950">一時保存中の定期点検</span>
+        <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-900 bg-white">
+          {loading ? '…' : `${entries.length} 件`}
+        </Badge>
+      </div>
+      <ul className="divide-y divide-amber-100/80 max-h-48 overflow-y-auto">
+        {loading ? (
+          <li className="px-4 py-3 text-sm text-amber-900/70">読み込み中…</li>
+        ) : (
+          entries.map(({ recordId, device: dev, savedAt }) => (
+            <li
+              key={recordId}
+              className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2"
+            >
+              <div className="min-w-0 text-sm">
+                <p className="font-medium text-amber-950 truncate">{dev.name}</p>
+                <p className="text-xs text-amber-900/80">
+                  {dev.barcode ? `ME ${dev.barcode}` : '—'}
+                  {savedAt
+                    ? ` · 保存 ${format(new Date(savedAt), 'M/d HH:mm', { locale: ja })}`
+                    : ''}
+                </p>
+              </div>
+              <Link
+                href={maintenanceInspectionHref(dev)}
+                className={cn(
+                  buttonVariants({ variant: 'outline', size: 'sm' }),
+                  'shrink-0 h-8 text-xs border-amber-200 text-amber-900',
+                )}
+              >
+                続きから
+              </Link>
+            </li>
+          ))
+        )}
+      </ul>
     </div>
   )
 }
@@ -224,19 +280,21 @@ export function PeriodicInspectionDueList({ className }: Props) {
     activeDeviceCount: 0,
   })
   const [loading, setLoading] = useState(true)
+  const [drafts, setDrafts] = useState<PeriodicDraftListEntry[]>([])
 
   const monthLabel = format(new Date(), 'yyyy年M月', { locale: ja })
 
   const fetchList = useCallback(async () => {
     setLoading(true)
-    const [devRes, recRes, masRes] = await Promise.all([
+    const [devRes, recRes, masRes, draftList] = await Promise.all([
       supabase.from('devices').select('*'),
       supabase
         .from('maintenance_records')
-        .select('device_id, completed_date')
+        .select('device_id, completed_date, maintenance_model_master_id, is_draft')
         .eq('type', '定期点検')
         .not('completed_date', 'is', null),
       supabase.from('maintenance_model_masters').select('*'),
+      fetchPeriodicDraftList(supabase),
     ])
 
     const { dueThisMonth: due, stale: overdue, meta: listMeta } = mapPeriodicInspectionRows(
@@ -248,6 +306,7 @@ export function PeriodicInspectionDueList({ className }: Props) {
     setDueThisMonth(due)
     setStale(overdue)
     setMeta(listMeta)
+    setDrafts(draftList)
     setLoading(false)
   }, [supabase])
 
@@ -284,6 +343,7 @@ export function PeriodicInspectionDueList({ className }: Props) {
           一覧を更新
         </Button>
       </div>
+      <DraftListPanel loading={loading} entries={drafts} />
       <div className="grid md:grid-cols-2 gap-4">
         <DueThisMonthPanel
           loading={loading}

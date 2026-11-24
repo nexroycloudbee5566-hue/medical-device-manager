@@ -145,7 +145,7 @@ export default function DashboardPage() {
       supabase.from('devices').select('*'),
       supabase
         .from('maintenance_records')
-        .select('device_id, completed_date')
+        .select('device_id, completed_date, maintenance_model_master_id, is_draft')
         .eq('type', '定期点検')
         .not('completed_date', 'is', null),
       supabase.from('maintenance_model_masters').select('*'),

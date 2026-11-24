@@ -3,17 +3,17 @@ import type { Device, MaintenanceModelMaster } from '@/lib/types'
 import { normalizeDeviceStatus } from '@/lib/types'
 import { deviceEligibleForAnnualPlan } from '@/lib/annual-maintenance-plan'
 import {
-  deviceHasInspectionMaster,
   filterPeriodicMasters,
   mapMaintenanceModelMasterRow,
+  matchMastersForDevice,
 } from '@/lib/maintenance-master'
 import {
   derivePlannedDate,
-  getIntervalMonthsForDevice,
   isInspectionStale,
   inspectionDueDate,
   isPlannedInMonth,
   completedInspectionInMonth,
+  periodicCycleLabel,
 } from '@/lib/inspection-interval'
 
 export type PeriodicInspectionDeviceRow = Pick<
@@ -23,29 +23,78 @@ export type PeriodicInspectionDeviceRow = Pick<
 
 export type PeriodicInspectionEntry = {
   device: PeriodicInspectionDeviceRow
+  masterId: string
+  cycleLabel: string
   lastInspection: string | null
   intervalMonths: number
   plannedDate: string | null
 }
 
-export function latestPeriodicInspectionByDevice(
-  records: { device_id: string | null; completed_date: string | null }[],
+export type PeriodicRecordRow = {
+  device_id: string | null
+  completed_date: string | null
+  maintenance_model_master_id?: string | null
+  is_draft?: boolean | null
+}
+
+function isCompletedPeriodicRow(row: PeriodicRecordRow): boolean {
+  if (row.is_draft === true) return false
+  return Boolean(row.device_id && row.completed_date)
+}
+
+export function latestPeriodicByDeviceMasterKey(deviceId: string, masterId: string): string {
+  return `${deviceId}::${masterId}`
+}
+
+/** 機器×サイクルの最終実施日。マスタ未紐づけ記録は、その機器の定期マスタが1件のときだけ採用 */
+export function latestPeriodicInspectionByDeviceMaster(
+  records: PeriodicRecordRow[],
+  mastersForDevice: Map<string, MaintenanceModelMaster[]>,
 ): Map<string, string> {
-  const latestByDevice = new Map<string, string>()
+  const latest = new Map<string, string>()
+  const unscoped = new Map<string, string>()
+
   for (const row of records) {
-    const did = row.device_id
-    const cd = row.completed_date
-    if (!did || !cd) continue
-    const prev = latestByDevice.get(did)
-    if (!prev || cd > prev) latestByDevice.set(did, cd.slice(0, 10))
+    if (!isCompletedPeriodicRow(row)) continue
+    const did = row.device_id as string
+    const cd = (row.completed_date as string).slice(0, 10)
+    const mid = row.maintenance_model_master_id
+    if (mid) {
+      const key = latestPeriodicByDeviceMasterKey(did, mid)
+      const prev = latest.get(key)
+      if (!prev || cd > prev) latest.set(key, cd)
+      continue
+    }
+    const prev = unscoped.get(did)
+    if (!prev || cd > prev) unscoped.set(did, cd)
   }
-  return latestByDevice
+
+  for (const [deviceId, cycles] of mastersForDevice) {
+    if (cycles.length !== 1) continue
+    const orphan = unscoped.get(deviceId)
+    if (!orphan) continue
+    const key = latestPeriodicByDeviceMasterKey(deviceId, cycles[0].id)
+    const prev = latest.get(key)
+    if (!prev || orphan > prev) latest.set(key, orphan)
+  }
+
+  return latest
+}
+
+function plannedDateForCycle(
+  device: PeriodicInspectionDeviceRow,
+  cycle: MaintenanceModelMaster,
+  cycleCount: number,
+  last: string | null,
+): string | null {
+  const dueOverride = cycleCount === 1 ? device.next_maintenance_due : null
+  return derivePlannedDate(dueOverride, last, cycle.inspection_interval_months)
 }
 
 export function buildPeriodicInspectionLists(
   devices: PeriodicInspectionDeviceRow[],
   masters: MaintenanceModelMaster[],
-  latestByDevice: Map<string, string>,
+  latestByDeviceMaster: Map<string, string>,
   today = new Date(),
 ): { dueThisMonth: PeriodicInspectionEntry[]; stale: PeriodicInspectionEntry[] } {
   const periodicMasters = filterPeriodicMasters(masters)
@@ -56,28 +105,36 @@ export function buildPeriodicInspectionLists(
   for (const dev of devices) {
     if (!deviceEligibleForAnnualPlan(masters, dev)) continue
 
-    const last = latestByDevice.get(dev.id) ?? null
-    const intervalMonths = getIntervalMonthsForDevice(masters, dev.manufacturer, dev.model)
-    const plannedDate = derivePlannedDate(dev.next_maintenance_due, last, intervalMonths)
+    const cycles = matchMastersForDevice(periodicMasters, dev.manufacturer, dev.model, 'periodic')
+    if (cycles.length === 0) continue
 
-    const entry: PeriodicInspectionEntry = {
-      device: dev,
-      lastInspection: last,
-      intervalMonths,
-      plannedDate,
-    }
+    for (const cycle of cycles) {
+      const last =
+        latestByDeviceMaster.get(latestPeriodicByDeviceMasterKey(dev.id, cycle.id)) ?? null
+      const plannedDate = plannedDateForCycle(dev, cycle, cycles.length, last)
+      const intervalMonths = cycle.inspection_interval_months
 
-    const hasItems = deviceHasInspectionMaster(periodicMasters, dev)
-    const staleFlag = isInspectionStale(last, intervalMonths, dev.next_maintenance_due, todayStart)
-    const monthFlag =
-      isPlannedInMonth(plannedDate, todayStart) && !completedInspectionInMonth(last, todayStart)
+      const entry: PeriodicInspectionEntry = {
+        device: dev,
+        masterId: cycle.id,
+        cycleLabel: periodicCycleLabel(cycle),
+        lastInspection: last,
+        intervalMonths,
+        plannedDate,
+      }
 
-    if (monthFlag) dueMonth.push(entry)
+      const hasItems = cycle.checklist_items.length > 0
+      const dueOverride = cycles.length === 1 ? dev.next_maintenance_due : null
+      const staleFlag = isInspectionStale(last, intervalMonths, dueOverride, todayStart)
+      const monthFlag =
+        isPlannedInMonth(plannedDate, todayStart) && !completedInspectionInMonth(last, todayStart)
 
-    if (normalizeDeviceStatus(dev.status) === 'active' && hasItems && staleFlag) {
-      const dueDate =
-        dev.next_maintenance_due?.slice(0, 10) ?? inspectionDueDate(last, intervalMonths)
-      stale.push({ ...entry, plannedDate: dueDate })
+      if (monthFlag) dueMonth.push(entry)
+
+      if (normalizeDeviceStatus(dev.status) === 'active' && hasItems && staleFlag) {
+        const dueDate = plannedDate ?? inspectionDueDate(last, intervalMonths)
+        stale.push({ ...entry, plannedDate: dueDate })
+      }
     }
   }
 
@@ -96,14 +153,14 @@ export function buildPeriodicInspectionLists(
   return { dueThisMonth: dueMonth, stale }
 }
 
-/** 未点検の定期点検対象数（今月予定＋期限超過、重複は1件） */
+/** 未点検の定期点検対象数（今月予定＋期限超過。機器×サイクル単位、重複は1件） */
 export function countPeriodicPending(
   dueThisMonth: PeriodicInspectionEntry[],
   stale: PeriodicInspectionEntry[],
 ): number {
   const ids = new Set<string>()
-  for (const e of stale) ids.add(e.device.id)
-  for (const e of dueThisMonth) ids.add(e.device.id)
+  for (const e of stale) ids.add(`${e.device.id}::${e.masterId}`)
+  for (const e of dueThisMonth) ids.add(`${e.device.id}::${e.masterId}`)
   return ids.size
 }
 
@@ -115,7 +172,7 @@ export type PeriodicInspectionListMeta = {
 export function mapPeriodicInspectionRows(
   devices: { status: string }[],
   mastersRaw: Record<string, unknown>[] | null,
-  records: { device_id: string | null; completed_date: string | null }[] | null,
+  records: PeriodicRecordRow[] | null,
   today = new Date(),
 ): {
   dueThisMonth: PeriodicInspectionEntry[]
@@ -128,13 +185,30 @@ export function mapPeriodicInspectionRows(
   }) as PeriodicInspectionDeviceRow[]
 
   const allMasters = (mastersRaw ?? []).map((row) => mapMaintenanceModelMasterRow(row))
-  const latestByDevice = latestPeriodicInspectionByDevice(records ?? [])
-  const lists = buildPeriodicInspectionLists(activeDevices, allMasters, latestByDevice, today)
+  const periodicMasters = filterPeriodicMasters(allMasters)
+  const mastersForDevice = new Map<string, MaintenanceModelMaster[]>()
+  for (const dev of activeDevices) {
+    mastersForDevice.set(
+      dev.id,
+      matchMastersForDevice(periodicMasters, dev.manufacturer, dev.model, 'periodic'),
+    )
+  }
+
+  const latestByDeviceMaster = latestPeriodicInspectionByDeviceMaster(
+    records ?? [],
+    mastersForDevice,
+  )
+  const lists = buildPeriodicInspectionLists(
+    activeDevices,
+    allMasters,
+    latestByDeviceMaster,
+    today,
+  )
 
   return {
     ...lists,
     meta: {
-      periodicMasterCount: filterPeriodicMasters(allMasters).length,
+      periodicMasterCount: periodicMasters.length,
       activeDeviceCount: activeDevices.filter(
         (d) => normalizeDeviceStatus(d.status) === 'active',
       ).length,
