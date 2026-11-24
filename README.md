@@ -95,10 +95,14 @@ Next.js 16 + TypeScript + Supabase (PostgreSQL / Auth / Realtime) + Tailwind CSS
 
 ## クイック起動（Windows）
 
-1. `.env.local` を用意（[.env.local.example](./.env.local.example) 参照）
-2. **`起動.bat`** をダブルクリック（初回は `npm install` 自動実行）
+| 誰 | やること |
+|----|----------|
+| **職員** | デスクトップの **「医療機器管理を起動」**（[医療機器管理を起動.vbs](./医療機器管理を起動.vbs) のショートカット）→ PIN ログイン |
+| **担当者（初回）** | `.env.local` 配置 → `scripts/create-desktop-shortcut.ps1` |
 
-不調時は **`キャッシュクリアして起動.bat`**。配布用の短いメモは **[配布メモ.txt](./配布メモ.txt)**。
+- 手順1枚: **[docs/職員用_開き方.txt](./docs/職員用_開き方.txt)**
+- セットアップ・更新: **[docs/担当者_セットアップと更新.md](./docs/担当者_セットアップと更新.md)**
+- 開発者向け: **`起動.bat`** / 不調時は **`キャッシュクリアして起動.bat`**
 
 ## デプロイ（ホスティング）
 

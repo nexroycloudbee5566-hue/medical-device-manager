@@ -4,9 +4,8 @@ title 医療機器管理システム
 cd /d "%~dp0"
 
 echo.
-echo ========================================
-echo   医療機器管理システム を起動します
-echo ========================================
+echo   医療機器管理システム（起動中）
+echo   閉じるとアプリは停止します。
 echo.
 
 where node >nul 2>&1
@@ -40,15 +39,10 @@ if not exist "node_modules\" (
   echo.
 )
 
-echo 準備ができたらブラウザでアプリを開きます。
-echo データは Supabase クラウドと同期します（他 PC と共有）。
-echo 詳細: docs\ローカル利用ガイド.md
-echo.
-echo ※ この黒い画面を閉じるとアプリは停止します。
-echo    止めるときはこの画面で Ctrl + C を押すか、右上の × で閉じてください。
+echo ブラウザを開きます…
 echo.
 
-start "" cmd /c "timeout /t 8 /nobreak >nul & start http://127.0.0.1:3000/"
+start "" cmd /c "timeout /t 6 /nobreak >nul & start http://127.0.0.1:3000/auth/login"
 
 call npm run dev
 

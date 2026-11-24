@@ -1,16 +1,21 @@
 ■ 医療機器管理システム — 他の PC に渡すときのメモ
 
-【渡すもの】
+【職員に渡すもの】
+  ・デスクトップショートカット「医療機器管理を起動」
+  ・docs\職員用_開き方.txt（印刷1枚）
+
+【担当者が渡すもの】
   ・このフォルダ（ZIP 可。node_modules と .next は削除してから圧縮して OK）
   ・.env.local（必須・秘密）→ 別途、安全な方法で渡す
+  ・docs\担当者_セットアップと更新.md
 
-【受け取った人】
+【受け取った PC（担当者作業）】
   1. Node.js LTS を入れる https://nodejs.org/
-  2. .env.local をこのフォルダに置く
-  3. 「起動.bat」をダブルクリック
-  4. ブラウザで http://127.0.0.1:3000
+  2. .env.local をこのフォルダに置く（職員 PC は ALLOW_PIN_LOGIN_BYPASS=false 推奨）
+  3. scripts\create-desktop-shortcut.ps1 でショートカット作成
+  4. 職員は「医療機器管理を起動」だけ使う
 
-詳細は docs\ローカル利用ガイド.md
+詳細は docs\担当者_セットアップと更新.md
 
 【データ】
   全 PC 同じ Supabase を見るので、機器・点検・依頼は共有されます。
